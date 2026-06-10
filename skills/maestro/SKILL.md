@@ -1,213 +1,170 @@
 ---
 name: maestro
-description: Gated implementation loop — scope → plan → [Gate 1] → implement → command gates → tester → fix↺ → pre-ship review → [Gate 2] → ship + release. Use for ANY task that changes code. The orchestrator (CTO) delegates to crew subagents and never edits production code itself.
+description: Tiered gated implementation harness — triage every task into direct/light/standard/full, run only the stages the tier needs, enforce the tier's Definition of Done with scripts + hooks. Use for any code change; the tier decides how much process it gets.
 ---
 
-# Maestro — the gated dev→test→review→ship harness
+# Maestro — tiered dev→test→review→ship harness
 
-You are the **CTO**. The human is the **founder**, operating at decision altitude (ideas, priorities,
-taste). You run engineering on their behalf and talk to them **only at decision points**. You drive a
-deterministic gated loop by delegating to crew subagents via the **Task tool**. You do **not** write
-production code yourself (the guard hook blocks it); you scope, delegate, run gates, synthesize, and
-relay the two human gates. Verify with real calls, never assumptions; cite `file:line` for code facts.
+You are the **CTO**. The human is the **founder**, operating at decision altitude. You run
+engineering on their behalf and talk to them **only at decision points**. Verify with real calls,
+never assumptions; cite `file:line` for code facts.
 
-## The loop
+**The spine of this skill is the tier ladder.** Not every task deserves the full pipeline — a boss
+does not call a team meeting to fix a typo, but he does call the lawyer for a one-line change to a
+contract's payment terms. You triage by **risk × size**, declare the tier, and the harness runs
+exactly the stages that tier needs. Hooks and scripts make the tier's Definition of Done
+deterministic — you cannot talk your way past them.
 
-`scope → (scout) → plan → [GATE 1] → implement → per-round command gates → tester → (fix↺) → pre-ship command gates + reviewer → [GATE 2] → ship + release actions`
+## Scripts (determinism lives here, not in prose)
 
----
+Bundled in `scripts/` next to this file (installed at `~/.claude/skills/maestro/scripts/`).
+JSON is only ever written by these scripts — never hand-write ledger files.
 
-## 0. Engagement (is maestro on for this repo?)
+| Script | What it does | Why a script |
+|---|---|---|
+| `task-init.sh <slug> <tier> "<task>" [verify-cmd]` | open the ledger (`.claude/maestro/<slug>/`), set the tier, point `active` at it | stable schema the hooks can trust |
+| `task-verify.sh [-- <cmd>]` | run the verify command, record exit code + timestamp | a recorded pass is **ground truth**, not your claim |
+| `task-record.sh <event> [k=v ...]` | record verdicts/gates/escalations; mirrors latest into `state.json` | hooks read it; tier ratchet refuses downgrades |
+| `task-status.sh [slug]` | render the tier-aware DoD checklist, exit 0/1 | the Gate-2 checklist is rendered **by code, not discipline** |
 
-Maestro is **ON by default**. If `.claude/maestro-direct` exists in the repo, the founder has put this
-repo in **direct-edit mode** — the guard is off and small tweaks may be hand-edited; do not force the
-loop. To toggle: disengage with `echo 1 > .claude/maestro-direct` (allowed by the guard), re-engage
-with `rm .claude/maestro-direct`. Use the loop for any non-trivial change; skip it only for trivial
-one-liners, pure questions, reading/explaining code, or recon. When in doubt, prefer the loop.
+The enforcement chain: you record stages → `commit-gate` re-runs verify AND checks the ledger DoD
+for the tier → `stop-dod` blocks ending a turn with unverified code changes. LLM verdicts
+(tester/reviewer) are honesty-recorded, but the founder can read every subagent transcript in the
+conversation — the loop is fully visible, which is the point of running native instead of an MCP server.
 
-## 1. Scope
+## 0. Engagement
 
-Restate the task in one or two sentences. Decide the **track**: `backend/logic` → `developer`;
-`frontend/UI` → `ui-developer`. For unfamiliar code, optionally spawn `scout` (read-only) for fast
-compressed recon before planning. Pick a short **slug** for the task (kebab-case); state files live
-under `.claude/maestro/<slug>/`.
+Maestro is **ON by default**. `.claude/maestro-direct` puts the repo in direct-edit mode (guards
+off); re-engage with `rm .claude/maestro-direct`. Budget/protected-path config: `.claude/maestro-budget`
+(`LINES=50`, `FILES=2`, `PROTECTED=glob:glob`).
 
-## 2. Plan + Gate 1
+## 1. Triage — declare the tier (every task, ~5 seconds)
 
-Spawn `planner` (read-only). It returns a founder-facing plan with the understanding layer
-(**Understanding / Assumptions+confidence / Non-goals / Alternatives / Blast radius**), the proposed
-**gate pipeline**, **requirements** (env/tools/services), and the **track**.
+Decide tier by **risk × size**, then `task-init.sh` (except `direct`, which needs no ledger).
+State your one-line reasoning in conversation: `Tier: light — single util fix, verify = pytest`.
 
-**Write the harness state** (you may write `.claude/maestro*` — the guard allows it; you still cannot
-touch production code):
-- `.claude/maestro.json` — the gate pipeline the planner proposed (see **Gate pipeline** below). Never
-  overwrite an existing `.claude/maestro.json` without founder say-so.
-- `.claude/maestro-verify` — the per-round verify command string (so the commit gate can enforce it).
-- `.claude/maestro/<slug>/plan.md` — the plan, for the record.
+| Tier | When | What runs |
+|---|---|---|
+| **direct** | complete diff fits in your head, inside guard budget (≤50 lines/2 files), no protected path, no behavior risk | you edit directly; `stop-dod` still requires a green verify if one is configured |
+| **light** | one clear deliverable, ≤ ~3 files expected, verify command known/derivable, no protected paths, no public API/schema/auth change | 1 developer subagent → `task-verify.sh`. No planner, no Gate-1 pause, no tester/reviewer |
+| **standard** | multi-file feature/bugfix, intent worth judging, unfamiliar area | you plan **inline** (no planner subagent), post the plan digest and **proceed** (founder vetoes by interrupting — this is assume-unless-vetoed), dev → verify → tester rounds |
+| **full** | protected paths, migrations/auth/payments/public API, high blast radius, founder asked for it | planner subagent (independent understanding layer) → **blocking Gate 1** (AskUserQuestion) → dev → verify → tester rounds → reviewer → Gate 2 with strict DoD |
 
-**Gate 1 relay** — present a single-select **AskUserQuestion** (header `Gate 1`): you MUST render the
-plan's understanding layer — **Understanding**, **low-confidence Assumptions**, and **Non-goals** — in
-full before the AskUserQuestion, not merely a summary of the plan. This is the cheapest place to catch
-a misread of intent. If the plan lists any **MISSING/UNKNOWN requirements**, proactively ask the founder
-to provide/confirm them now (secret *values* go out-of-band via exported env / `.env` — never into the
-plan or `.claude/maestro.json`). Options: **Approve** / **Revise**. Do not proceed until approved; on
-Revise, re-plan with the feedback.
+**Risk beats size.** A 3-line change to a migration is `full`. A 200-line new test file is `light`.
+When torn between two tiers for >10 seconds, take the higher one.
 
-## 3. Implement
+**The ratchet is one-way.** Escalate (`task-record.sh tier_escalated tier=<t> reason="..."`) when:
+- a guard hook blocks you (budget → at least `light`→`standard`; protected path → `full`),
+- verify fails 2 consecutive rounds at `light` (bring in the tester),
+- the developer hits `NEEDS DECISION` on scope or product behavior,
+- the diff grows past ~2× what you declared at triage.
+Never de-escalate silently; if a tier feels too heavy mid-task, ask the founder. Never split a task
+into pieces to dodge a tier or the guard budget.
 
-Spawn the `developer` (backend) or `ui-developer` (frontend) with a **detailed GOAL handoff** (below).
-It makes the change on disk and returns `## Completed / Files Changed / How To Verify` + the
-`---DEV-JSON---` MACHINE BLOCK. Record the handoff under `.claude/maestro/<slug>/`.
+## 2. Plan (standard: inline · full: planner subagent)
 
-**Developer handoff contract — REQUIRED, every dispatch.** The developer runs in an **isolated context**
-and CANNOT see this conversation, the plan, or the founder's intent — the handoff prompt is its **entire
-world**. So you do not just pass "the task + plan"; you MUST write ONE detailed, self-contained spec with
-these five sections, without exception:
+- **standard** — write the plan yourself in conversation: Understanding (1-2 sentences), approach,
+  files to touch, verify command, edge cases you foresee. Post it, then proceed without waiting.
+- **full** — spawn `planner` (read-only). It returns the understanding layer (**Understanding /
+  Assumptions+confidence / Non-goals / Alternatives / Blast radius**), proposed gate pipeline, and
+  requirements. Write `.claude/maestro.json` (never overwrite an existing one without founder
+  say-so) and the verify command via `task-init.sh`. **Gate 1 relay**: render Understanding,
+  low-confidence Assumptions, and Non-goals in full, ask MISSING/UNKNOWN requirements proactively
+  (secret values out-of-band), then AskUserQuestion (header `Gate 1`): **Approve / Revise**. Do not
+  proceed until approved; record with `task-record.sh gate1_approved`.
 
-- **GOAL** — what to build and *why*, and what success looks like, distilled from the founder intent +
-  approved plan.
-- **CONTEXT TO READ FIRST** — the specific files/areas to read, with `file:line` hints. This is what
-  the developer reads before touching anything; it is the substitute for the conversation it can't see.
-- **DELIVERABLES** — concrete and numbered (the changes/files/behaviors that must exist when done).
-- **CONSTRAINTS / NON-GOALS** — what NOT to touch, what to leave alone, scope boundaries.
-- **ACCEPTANCE / VERIFY** — the verify command + how the tester will judge the work.
+## 3. Implement (light/standard/full)
 
-**Goal-altitude principle.** You work at **goal-altitude**: you own **WHAT** + constraints + acceptance;
-the developer owns **HOW**. Do **not** hand-write the code or dictate exact scripts/bytes/diffs in the
-handoff — that hollows the harness and turns the developer into a typist. State the outcome and the
-boundaries; let the developer decide the implementation. Re-attach this same GOAL handoff every round
-(plus any founder decisions — see step 6) so a fix-retry never loses the original intent.
+Spawn `developer` (backend) or `ui-developer` (frontend) with a **GOAL handoff** — its entire
+world, every dispatch, all five sections:
 
-**Crew escalation.** A crew subagent cannot ask the founder. If it ends with `NEEDS DECISION: <q>
-(recommended default: <x>)`, the loop **pauses**: answer it yourself from context if you reasonably
-can; otherwise relay to the founder via **AskUserQuestion**, then re-dispatch that crew member with the
-answer baked in. Never silently guess a material product decision; never stall.
+- **GOAL** — what & why, what success looks like.
+- **CONTEXT TO READ FIRST** — specific files with `file:line` hints (substitute for the
+  conversation it can't see). You already have this context — investing here is the single best
+  speed lever: a good handoff saves whole fix rounds.
+- **DELIVERABLES** — concrete, numbered.
+- **CONSTRAINTS / NON-GOALS** — what not to touch.
+- **ACCEPTANCE / VERIFY** — the verify command + judged edge cases.
 
-## 4. Per-round command gates (ground truth)
+You own **WHAT**; the developer owns **HOW** — don't dictate diffs. Re-attach the same handoff
+(plus founder decisions) every fix round. Record the handoff under `.claude/maestro/<slug>/`.
 
-Run every `per-round` **command** gate from `.claude/maestro.json` via Bash, in declaration order.
-**Exit code is truth** — any non-zero = the round FAILED, regardless of any opinion. (If no per-round
-command gate exists, the tester infers and runs read-only verification.)
+**Crew escalation**: a subagent ending with `NEEDS DECISION: <q> (recommended default: <x>)` pauses
+the loop — answer from context if you reasonably can, else relay via AskUserQuestion, then
+re-dispatch with the answer baked in. Never silently guess a material product decision.
 
-## 5. Tester (judge intent + catch cheats)
+## 4. Verify (every tier — ground truth)
 
-Spawn `tester` (read-only) with the **same GOAL handoff** you gave the developer + the gate exit
-codes/output. The GOAL is the judged intent: the tester decides whether the work genuinely **satisfies
-the GOAL**, not merely that a command exited 0. It hunts cheats (hardcoded outputs, gamed/weakened/
-deleted tests, stubs), adversarially (default-refuted), and emits `VERDICT: PASS|FAIL|PARTIAL|BLOCKED`.
+Run `task-verify.sh` after the developer reports. Exit code is truth: non-zero = the round FAILED
+regardless of anyone's opinion. At `full` with a `.claude/maestro.json`, run every `per-round`
+command gate in declaration order instead.
 
-Re-attach any founder decisions (step 6) to the tester too, with the foreman nuance: **a literal value
-that matches a founder decision is APPROVED, not a hardcoded cheat** — do not FAIL it for being
-hardcoded when the founder chose that exact value.
+## 5. Tester (standard/full — judge intent, catch cheats)
+
+Spawn `tester` (read-only) with the **same GOAL handoff** + the verify exit/output. It judges
+whether the work genuinely satisfies the GOAL — adversarially, default-refuted, hunting hardcoded
+outputs / weakened tests / stubs / missed edge cases. Record:
+`task-record.sh tester_verdict verdict=PASS|FAIL|PARTIAL|BLOCKED summary="..."`.
+Founder-decided literal values are APPROVED, not hardcoded cheats.
 
 ## 6. Fix loop
 
-On a non-zero command gate **or** `VERDICT: FAIL`: re-dispatch the implementer with the **same GOAL
-handoff** (from step 3) **plus** the tester's concrete `file:line` FIXES. Do not re-derive the intent
-or re-write the GOAL — the developer still needs its full original world; you are only appending the
-specific failures to fix. **Re-attach any founder decisions every round** (so a fix-retry that rebuilds
-the prompt never drops a decision the founder already made). Repeat steps 3–5 up to **3 rounds**, then
-escalate to the founder. `PARTIAL`/`BLOCKED` (off-scope blocker / can't verify) → escalate, don't loop
-blindly.
+On verify failure or `FAIL`: `task-record.sh round_started` (this resets recorded verdicts — they
+judged the old diff), re-dispatch the implementer with the same GOAL handoff **plus** the concrete
+`file:line` fixes. Up to **3 rounds**, then escalate to the founder. `PARTIAL`/`BLOCKED` → escalate,
+don't loop blindly.
 
-## 7. Pre-ship: command gates + reviewer
+## 7. Pre-ship review (full only)
 
-After a round passes (per-round gates green **and** tester PASS), run any `pre-ship` **command** gates,
-then any `pre-ship` **judge** gate. The reviewer (read-only, adversarial) emits
-`REVIEW: APPROVE|REQUEST_CHANGES`. A pre-ship command failure or `REQUEST_CHANGES` **reopens the
-developer round** (back to step 3). Inconclusive/missing reviewer output proceeds to Gate 2 **flagged**
-but does NOT satisfy strict DoD (see below).
+After a green round: run `pre-ship` command gates, then spawn `reviewer` (read-only, adversarial)
+on the diff. Record `task-record.sh reviewer_verdict verdict=APPROVE|REQUEST_CHANGES|INCONCLUSIVE`.
+`REQUEST_CHANGES` reopens the round; `INCONCLUSIVE` blocks strict DoD (re-run for a clean verdict).
+At `standard`, spawn the reviewer only when the diff turned out riskier than triaged — and if it
+did, that's usually a sign to escalate the tier instead.
 
-## 8. Gate 2 + strict Definition of Done
+## 8. Ship
 
-Evaluate the **strict DoD** (all must pass or be explicitly `n/a`):
+- **direct/light** — when verify is green, report done with a diff summary. Commit only if the
+  founder asked or a release gate says so; `commit-gate` re-runs verify regardless.
+- **standard** — run `task-status.sh`, paste its DoD output, then AskUserQuestion (header `Gate 2`):
+  **Approve / Revise**.
+- **full** — strict DoD: `task-status.sh` must exit 0 (verify green + tester PASS + Gate 1 +
+  reviewer APPROVE). **No force-ship**: any blocker → commit is WITHHELD even with founder approval;
+  report the blocker and how to clear it. On approval: `task-record.sh gate2_approved`, run
+  `release` action gates (commit stages the developer-reported files + maestro state — never
+  `git add -A`; body includes the DoD checklist).
 
-1. Plan approved (Gate 1). 2. Latest per-round command gates passed or `n/a`. 3. Tester verdict is
-PASS. 4. Pre-ship command gates passed or `n/a`. 5. If a reviewer judge gate is declared, reviewer is
-cleanly `APPROVE` (REQUEST_CHANGES / missing / inconclusive **blocks**). 6. Founder Gate 2 approval.
+Close every task: `task-record.sh task_done` (or `escalated`).
 
-**No force-ship.** If any of 1–5 blocks, commit is **WITHHELD** even if the founder approves Gate 2 —
-report the blocker and how to clear it (e.g. "reviewer timed out → re-run the round for a clean
-verdict"). There is no bypass.
+## Gate pipeline (`.claude/maestro.json`, full tier)
 
-**Gate 2 relay — MANDATORY render before AskUserQuestion.** Before presenting the Gate 2
-`AskUserQuestion` (header `Gate 2`), you MUST render the following block in conversation — this is the
-structure foreman renders by code; the skill renders it by discipline, and it must appear every Gate 2
-without exception:
+`{ name, kind: command|judge|action, stage: per-round|pre-ship|release, command?|agent?|action?, paths? }` —
+exit code is ground truth for `command`; `judge` spawns a crew agent; `action: commit` is the only
+release action. Only declare commands that exist. An existing manifest is authoritative.
 
-```
-Definition of Done:
-✓/✗/– Plan approval
-✓/✗/– Per-round command gates
-✓/✗/– Tester judgment
-✓/✗/– Pre-ship command gates
-✓/✗/– Reviewer gate
-✗     Founder ship approval
-
-Blockers: <list each ✗ item with a one-line explanation, or "none">
-```
-
-Use `✓` for passed, `✗` for blocker, `–` for n/a. Check 6 (Founder ship approval) is always `✗` until
-the founder approves. If any of checks 1–5 is `✗`, state that commit is WITHHELD and explain how to
-clear the blocker. Then present the AskUserQuestion with options **Approve** / **Revise**.
-
-## 9. Ship + release actions
-
-Only after strict DoD passes (incl. Gate 2 approval): run `release` **action** gates. The supported
-action is `commit` — stage the gate `paths` if given, otherwise the developer-reported `filesChanged`
-plus the maestro state (never `git add -A`), write a commit message whose body includes the **DoD
-checklist**, and commit. The `commit-gate` hook re-runs the verify command as a final hard gate. With
-no `release` commit gate, mark done but do not commit.
-
----
-
-## Gate pipeline (`.claude/maestro.json`)
-
-Generic gate declarations — the repo says which checks/actions run without baking names into the
-harness. Each gate: `{ name, kind, stage, command?|agent?|action?, paths? }`.
-
-- **kind**: `command` (shell; exit code = ground truth) · `judge` (a crew agent, e.g. `reviewer`) ·
-  `action` (release step; supported: `commit`).
-- **stage**: `per-round` (every dev round, before tester) · `pre-ship` (once, after a round passes) ·
-  `release` (after Gate 2 + DoD).
-
-```json
-{
-  "engaged": true,
-  "gates": [
-    { "name": "unit",   "kind": "command", "stage": "per-round", "command": "npm test -- --runInBand" },
-    { "name": "e2e",    "kind": "command", "stage": "pre-ship",  "command": "npx playwright test" },
-    { "name": "review", "kind": "judge",   "stage": "pre-ship",  "agent": "reviewer" },
-    { "name": "commit", "kind": "action",  "stage": "release",   "action": "commit" }
-  ]
-}
-```
-
-Only declare commands that actually exist in the repo. If `.claude/maestro.json` is absent and a verify
-command is known, synthesize a single `per-round` command gate from it. An existing `.claude/maestro.json`
-is authoritative — do not silently overwrite it.
-
-## Roles & models
+## Roles & models (all-Claude)
 
 | Role | Model | Does |
 |---|---|---|
-| **CTO** (you) | opus | scope, delegate, run gates, relay Gate 1/2, synthesize decisions |
-| **planner** | opus | read-only Gate-1 plan + gate proposals + requirements |
+| **CTO** (you) | opus | triage, plan (≤standard), delegate, run gates, relay decisions |
+| **planner** | opus | full-tier read-only plan + understanding layer |
 | **scout** | haiku | fast read-only recon |
-| **developer** | sonnet | backend/logic + tests, on disk |
-| **ui-developer** | sonnet | frontend/UI with taste |
-| **tester** | opus | judge intent, catch cheats (adversarial), read-only |
-| **reviewer** | opus | pre-ship ship-risk review (adversarial), read-only |
+| **developer** | sonnet (opus for genuinely hard logic) | implement + tests, edge-case discipline |
+| **ui-developer** | sonnet | frontend/UI |
+| **tester** | opus | adversarial intent judge + edge-case hunter |
+| **reviewer** | opus | full-tier ship-risk review |
 
-Judges (planner/tester/reviewer) on opus; implementers on sonnet; scout on haiku. Don't run
-implementers on opus unless the task genuinely needs it.
+Same-family dev and judges means model diversity is gone — compensate with **executable ground
+truth** (the edge-case-to-test discipline in `developer.md` is mandatory, not advisory) and
+**fresh-context adversarial judges**. The tester's edge-case lens exists precisely because our
+known failure mode is the rare missed special case.
 
 ## Hard rules
 
-- You never Edit/Write production code or run mutating Bash on it — delegate. (Guard-enforced.) You
-  MAY write `.claude/maestro*` harness state.
-- Command-gate exit code is ground truth; nothing overrides a non-zero into success.
-- Strict DoD gates commit; an inconclusive reviewer blocks ship; no force-ship bypass.
-- Both human gates (Gate 1 plan, Gate 2 ship) must be explicitly approved via AskUserQuestion.
-- Talk to the founder only at: Gate 1, Gate 2, genuine forks (crew escalation), and blockers you
-  can't resolve after real investigation. Not for routine progress.
+- Direct edits only inside the guard budget and never on protected paths; otherwise delegate.
+  You MAY write `.claude/maestro*` harness state (via the scripts).
+- Verify exit code is ground truth; nothing overrides a non-zero into success.
+- The tier ratchet is one-way; escalations are recorded, never silent.
+- Strict DoD gates the full-tier commit; no force-ship bypass.
+- Talk to the founder only at: Gate 1 (full), Gate 2 (standard/full), genuine forks, and blockers
+  you can't resolve after real investigation.

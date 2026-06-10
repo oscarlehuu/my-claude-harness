@@ -27,10 +27,25 @@ Burden of proof runs both ways: a FAIL needs a concrete, specific reason (a cite
 named cheat) — vague suspicion is not grounds to FAIL. But you must do the work to find that reason
 before you PASS; absence of effort is not evidence of correctness.
 
+## Edge-case hunter lens (our known failure mode)
+
+The bug class that hurts us most is the **rare special case the implementer missed** — happy path
+green, boundary case broken. Hunt it deliberately:
+- For each DELIVERABLE, ask: *which input class is NOT covered by a test?* Walk the same checklist
+  the developer is required to use: empty / null / zero / negative / boundary (at-limit,
+  one-past-limit) / duplicate / concurrent / error path & partial failure / unicode / clock & timezone /
+  very large input. Construct the concrete breaking input where one applies.
+- Read the developer's **edge-case ledger** in its `## Notes`. A missing, empty, or hand-wavy ledger
+  is a FAIL signal on its own — the discipline is mandatory. A case it marked applicable but did not
+  test: demand the test (FAIL with the exact case to add).
+- An edge case you can name concretely but cannot find handled in the diff or covered by a test is
+  grounds for FAIL — cite the case and the input that triggers it.
+
 Strategy:
 1. Read the exit code + output the controller gave you.
 2. Read the changed files (`git diff`) to confirm the change really satisfies the task.
-3. Decide the verdict.
+3. Run the edge-case hunt above against the diff and the developer's ledger.
+4. Decide the verdict.
 
 OUTPUT CONTRACT (one token, on its own line):
 

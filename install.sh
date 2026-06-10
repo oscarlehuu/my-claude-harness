@@ -8,7 +8,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 DEST="${1:+$1/.claude}"; DEST="${DEST:-$HOME/.claude}"
 mkdir -p "$DEST/agents" "$DEST/hooks" "$DEST/skills"
-chmod +x "$ROOT"/hooks/*.sh
+chmod +x "$ROOT"/hooks/*.sh "$ROOT"/skills/maestro/scripts/*.sh
 
 for f in "$ROOT"/crew/*.md;  do ln -sfn "$f" "$DEST/agents/$(basename "$f")"; done
 for f in "$ROOT"/hooks/*.sh; do ln -sfn "$f" "$DEST/hooks/$(basename "$f")"; done
@@ -26,7 +26,7 @@ fi
 
 echo "Installed maestro crew+hooks+skill into: $DEST"
 echo "  crew: $(ls "$ROOT/crew" | tr '\n' ' ')"
-echo "  hooks: guard-block-main-edits, guard-block-main-bash, commit-gate, maestro-engage   skill: maestro"
+echo "  hooks: guard-block-main-edits, guard-block-main-bash, commit-gate, stop-dod, maestro-engage   skill: maestro (+scripts)"
 echo "NEXT: merge settings.hooks.json into $DEST/settings.json"
 echo "      (PreToolUse guards + commit-gate + SessionStart auto-engage)."
 echo "      For a GLOBAL install, rewrite the hook command paths from \$CLAUDE_PROJECT_DIR to absolute $DEST/hooks/..."

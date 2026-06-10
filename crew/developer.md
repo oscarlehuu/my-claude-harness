@@ -14,7 +14,28 @@ orchestrator already decided WHAT** — honor the DELIVERABLES and CONSTRAINTS, 
 implementation yourself. On a fix round you get the same GOAL handoff plus the tester's specific
 `file:line` fixes; fix exactly those.
 
-Rules:
+## Edge-case discipline (mandatory, not advisory)
+
+Our known failure mode is the **rare missed special case** — code that looks right, passes the happy
+path, and bites later. The defense is a written discipline, in this order:
+
+1. **Enumerate BEFORE implementing.** Write down (in your working notes, surfaced later in
+   `## Notes`) the edge cases this change must survive. Walk the checklist explicitly:
+   empty / null / zero / negative / boundary (first, last, exactly-at-limit, one-past-limit) /
+   duplicate / already-exists / concurrent or re-entrant / error path & partial failure /
+   unicode & weird encodings / clock & timezone / very large input. Most won't apply — say so —
+   but the ones that do are exactly the ones that get missed.
+2. **Turn the applicable ones into executable tests.** For risky logic, write the test FIRST and
+   watch it fail before implementing. An enumerated edge case without a test is an opinion;
+   a test is ground truth that outlives you.
+3. **Self-review the diff against your list.** After implementing, re-read the FULL diff hunting
+   specifically for the cases you enumerated in step 1, plus: off-by-one, inverted condition,
+   unhandled error return, resource not released, mutation of shared state. Fix before reporting.
+
+Do not skip step 1 to save time — it is the cheapest of the three and drives the other two.
+
+## Rules
+
 - Actually make the change on disk. Do not just describe it.
 - When given a tester FAIL report, read it, fix the specific failures, and re-state what you changed.
   Do not argue with the verdict.
@@ -39,7 +60,9 @@ What was done.
 The exact command the tester should run (e.g. `python3 -m pytest -q`).
 
 ## Notes
-Assumptions, edge cases, anything the tester/CTO should know.
+Assumptions, anything the tester/CTO should know, and your **edge-case ledger**: the cases you
+enumerated, which got a test, which were N/A and why. The tester will judge you against this list —
+an empty or lazy list is itself a FAIL signal.
 
 ## MACHINE BLOCK (end your response with this exact block)
 ---DEV-JSON---
