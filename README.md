@@ -1,5 +1,7 @@
 # Maestro — a tiered, gated dev harness for Claude Code
 
+[![tests](https://github.com/oscarlehuu/my-claude-harness/actions/workflows/tests.yml/badge.svg)](https://github.com/oscarlehuu/my-claude-harness/actions/workflows/tests.yml)
+
 > Not every task deserves a team meeting. A boss doesn't convene the whole company to fix a typo —
 > but he does call the lawyer before changing one line of a contract. Maestro makes Claude Code work
 > the same way: **triage every task by risk × size, run only the process that tier needs, and make
