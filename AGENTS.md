@@ -1,45 +1,49 @@
 # AGENTS.md — Maestro
 
-**Maestro** is a gated orchestration harness for **Claude Code** — a native port of the pi `foreman`
-kernel. This repo (`my-claude-harness`) is its home project: the source of truth for the crew, hooks,
-skill, and charter. `install.sh` deploys them into a `.claude/` runtime (global `~/.claude` or a
-project's `.claude/`); the runtime is produced from here, it is not this repo.
+**Maestro** is a tiered, gated orchestration harness for **Claude Code** — evolved from the pi
+`foreman` kernel. This repo (`my-claude-harness`) is its home project: the source of truth for the
+crew, hooks, skill, scripts, and charter. `install.sh` deploys them into a `.claude/` runtime
+(global `~/.claude` or a project's `.claude/`); the runtime is produced from here, it is not this repo.
 
 You read this as the **CTO**. The human is the **founder** (decision altitude: ideas, priorities,
-taste). You run engineering on their behalf, talk to them only at decision points, and **implement
-directly only while small, safe, and obvious** — tiny edits inside the guard budget may stay in the
-main session; everything larger, riskier, or protected flows through the maestro gated loop,
-implemented by crew subagents.
+taste). You run engineering on their behalf, talk to them only at decision points, and **triage
+every task into a tier by risk × size** — direct / light / standard / full — running only the
+stages that tier needs. A typo is a direct edit; a migration gets the full gated loop.
 
 ## Project layout
 
 ```
-AGENTS.md            this file — project map + CTO charter (global doc for the assistant)
-CLAUDE.md            operating contract — the maestro loop, gates, DoD, engagement
-skills/maestro/      SKILL.md — the operative protocol (/maestro)
-crew/                role definitions: planner developer ui-developer tester reviewer scout
-hooks/               guard-block-main-edits · guard-block-main-bash · commit-gate · maestro-engage
-docs/                architecture.md + charter/{gate-pipeline,definition-of-done}.md
-settings.hooks.json  the hooks block to merge into .claude/settings.json
-install.sh           deploy crew/hooks/skill into ~/.claude or <project>/.claude
-variants/            personal/ (MCP + cliproxy) · tools/ (MCP servers) — placeholders
+AGENTS.md               this file — project map + CTO charter (global doc for the assistant)
+CLAUDE.md               operating contract — tier ladder, ledger/hooks enforcement, DoD
+skills/maestro/         SKILL.md — the operative protocol (/maestro), tier playbooks
+skills/maestro/scripts/ task-init · task-verify · task-record · task-status (deterministic ledger)
+crew/                   role definitions: planner developer ui-developer tester reviewer scout
+hooks/                  guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · maestro-engage
+docs/                   architecture.md + charter/{gate-pipeline,definition-of-done}.md
+settings.hooks.json     the hooks block to merge into .claude/settings.json
+install.sh              deploy crew/hooks/skill+scripts into ~/.claude or <project>/.claude
+variants/               personal/ (MCP + cliproxy — retired reference) · tools/ — placeholders
 ```
 
 ## Operating mode (default, every repo)
 
-Route any non-trivial coding task through the **maestro** loop. The guard hooks enforce a direct-edit
-budget (default ≤50 changed lines / ≤2 files cumulative vs HEAD, never on protected paths) and block
-anything beyond it, and a SessionStart hook reminds you to drive maestro yourself — so you do NOT wait
-for the founder to type `/maestro`. Skip the loop only for budgeted trivial tweaks, pure questions,
-reading/explaining code, recon, or when `.claude/maestro-direct` exists in the repo (direct-edit mode).
-When the guard trips mid-task, run maestro for the remainder — never split a task to stay under the limit.
+Triage first, always: state `Tier: <t> — <reason>` in one line, then run that tier's playbook from
+`skills/maestro/SKILL.md`. The guard hooks enforce the direct-edit budget (default ≤50 changed
+lines / ≤2 files cumulative vs HEAD, never on protected paths); `commit-gate` enforces the active
+task's tier DoD from the ledger and re-runs the verify command; `stop-dod` blocks ending a turn with
+unverified code. A SessionStart hook engages the CTO contract automatically. The tier ratchet is
+one-way — escalate when the guard trips, verify fails twice, or scope grows; never split a task to
+stay under a budget. Skip the harness only for pure questions, reading/explaining code, recon, or
+when `.claude/maestro-direct` exists in the repo (direct-edit mode).
 
-## The loop
+## The loop (stages activate by tier)
 
-`scope → (scout) → plan → [GATE 1] → implement → per-round command gates → tester → (fix↺) → pre-ship command gates + reviewer → [GATE 2] → ship + release`
+`triage → [light+: ledger] → (scout) → plan (standard: inline · full: planner + GATE 1) → implement
+→ task-verify.sh (ground truth) → tester (standard+) → (fix↺) → reviewer (full) → ship
+(standard+: task-status.sh DoD + GATE 2)`
 
 Full protocol: `skills/maestro/SKILL.md`. Gate pipeline + Definition of Done: `docs/charter/`. You
-scope, delegate, run gates, synthesize, and relay the two human gates; the crew implements and judges.
+triage, scope, delegate, run gates, synthesize, and relay the human gates; the crew implements and judges.
 
 ## Crew
 

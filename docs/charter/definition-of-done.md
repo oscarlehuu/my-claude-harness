@@ -1,42 +1,45 @@
 # Definition of Done
 
-Maestro's Definition of Done is strict and machine-evaluated. Gate 2 approval is necessary, but it is
-not enough to override failed checks or ambiguous reviewer output.
+Maestro's Definition of Done is **tier-aware and machine-evaluated**: `task-status.sh` renders the
+checklist from the ledger by code (not by the model's discipline), and `commit-gate` blocks a
+`git commit` whose tier requirements are not recorded. Gate approval is necessary, but it never
+overrides failed checks or ambiguous reviewer output.
 
-## Six checks
+## Checks by tier
 
-A task is done only when all six pass or are explicitly not applicable:
+| Check | direct | light | standard | full |
+|---|---|---|---|---|
+| Verify command green (recorded by `task-verify.sh`, exit code = ground truth) | ●¹ | ● | ● | ● |
+| Tester verdict `PASS` | – | – | ● | ● |
+| Plan approved (Gate 1) | – | – | – | ● |
+| Reviewer cleanly `APPROVE` | – | – | – | ● |
+| Founder ship approval (Gate 2) | – | –² | ● | ● |
 
-1. **Plan approval** — Gate 1 was approved by the founder.
-2. **Per-round command gates** — the latest per-round command gates passed, or `n/a` because none ran.
-3. **Tester judgment** — the latest tester verdict is `PASS`; `FAIL`, `PARTIAL`, `BLOCKED`, or missing
-   is not done.
-4. **Pre-ship command gates** — declared pre-ship command gates passed, or `n/a` because none ran.
-5. **Reviewer gate** — if a pre-ship reviewer judge gate is declared, the latest reviewer verdict must
-   cleanly be `APPROVE`. `REQUEST_CHANGES`, missing output, or inconclusive/unknown reviewer output
-   blocks done. If no reviewer gate is declared, this check is `n/a`.
-6. **Founder ship approval** — Gate 2 was approved by the founder.
+¹ enforced by the `stop-dod` hook when a verify command is configured — a turn cannot end with code
+changed after the last green verify.
+² light tasks report done with a diff summary; commit happens on founder ask or a release gate, and
+`commit-gate` re-runs verify regardless.
 
 ## Blocking semantics
 
-`done=true` only when there are no blockers. Each failed check becomes a blocker that keeps the task
-out of the `done` state. An inconclusive reviewer verdict is not silently treated as approval: it is
-surfaced as a checklist item and blocks commit, because strict DoD requires a clean reviewer `APPROVE`
-whenever a reviewer gate is declared.
+`done` requires every check the tier demands to pass or be explicitly `n/a`. Each failure is a
+blocker that withholds commit:
 
-If Gate 2 is approved while blockers remain, **withhold commit**, keep the task at Gate 2, and report
-the blockers. To rerun reviewer work, reject the ship gate with feedback asking for a live reviewer
-rerun. **There is no force-ship bypass for strict DoD.**
+- A non-zero verify exit is FAIL regardless of any opinion; nothing overrides it into success.
+- A new dev round (`task-record.sh round_started`) **invalidates previous verdicts** — they judged
+  the old diff. The tester/reviewer must re-judge before commit.
+- An inconclusive or missing reviewer verdict at full tier is not silently treated as approval — it
+  blocks, and the fix is a live reviewer re-run.
+- If Gate 2 is approved while blockers remain, **commit is withheld** and the blockers are reported.
+  **There is no force-ship bypass.**
 
 ## Where the checklist is recorded
 
-1. **CTO Gate 2 relay** — state the DoD rationale in conversation before/with the `AskUserQuestion`
-   Gate 2 prompt: which checks passed or are `n/a`, that founder sign-off is the only remaining item,
-   or that commit is WITHHELD and why.
-2. **Ledger** — record a `done_evaluated` entry (`done`, `blockers`, full `checklist`) under
-   `.claude/maestro/<slug>/`.
-3. **Auto-commit message body** — when a release `commit` action runs, include the rendered
-   `Definition of Done:` block in the commit message body.
+1. **Gate 2 relay** — the CTO pastes `task-status.sh` output (the rendered checklist + blockers)
+   before the AskUserQuestion prompt.
+2. **Ledger** — `.claude/maestro/<slug>/state.json` holds the latest verify/tester/reviewer state;
+   `log.jsonl` holds the full event history.
+3. **Commit message body** — when a release `commit` action runs, include the rendered checklist.
 
-This makes ship rationale visible to the founder, durable in the task ledger, and attached to git
-history when release auto-commit is enabled.
+This makes ship rationale visible to the founder in conversation, durable in the task ledger, and
+attached to git history.

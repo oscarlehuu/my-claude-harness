@@ -1,21 +1,50 @@
 # Architecture — Maestro
 
-Maestro is a port of the pi `foreman` harness onto Claude Code. The orchestration **logic** is
-provider-agnostic; only the **surface** (how maestro is invoked + how crew run) differs per variant.
+Maestro evolved from the pi `foreman` harness onto Claude Code, then grew the **tier ladder** the
+fixed pipeline lacked. The orchestration **logic** is provider-agnostic; only the **surface** (how
+maestro is invoked + how crew run) differs per variant.
 
-## Decision log (why native company is primary)
+## Core design: prose decides, scripts record, hooks enforce
 
-- Goal: native Claude Code, presentable/portable for a company, conserve Claude Max.
-- Verified: cliproxy injects the **genuine** Claude Code system prompt (no behavior change vs
-  native); routing to gpt/gemini works on subscription (no API key); gpt-as-developer (with the CC
-  prompt) **does tasks correctly and honors the maestro MACHINE BLOCK** — mismatch is cosmetic.
+The model (CTO) makes the judgment calls — which tier, what handoff, when to escalate. Everything
+that must be exactly right is code:
+
+- **Ledger = state machine.** `task-init/record/verify/status` scripts own the JSON schema under
+  `.claude/maestro/<slug>/`. The CTO never hand-writes ledger files.
+- **Ground truth.** `task-verify.sh` is the only writer of verify records — a recorded pass means
+  the command really exited 0, not that a model said so.
+- **Hooks = transition guards.** The guards budget-gate main-session edits; `commit-gate` reads the
+  active task's tier DoD from the ledger and re-runs verify on `git commit`; `stop-dod` blocks
+  ending a turn with code changed after the last green verify. All hard (exit 2 survives bypass
+  mode), all readable shell.
+- **Tier ratchet is one-way, in code** — `task-record.sh` refuses tier downgrades; a new round
+  invalidates stale verdicts.
+
+This recovers foreman's "deterministic controller" guarantees without a controller process: the
+state machine became files + shell, and the loop runs in the conversation where the founder can
+watch every step.
+
+## Decision log
+
+- **Why native (over the MCP replica).** An MCP server owning the loop was built and verified
+  (M1–M7, multi-provider crew via cliproxy) — then retired: the founder couldn't see inside it.
+  Native subagents + ledger files + hooks give the same hard outcomes with full observability;
+  `variants/personal/maestro-mcp` is kept as a frozen reference of that chapter.
+- **Why all-Claude crew.** Cross-model dev (gpt-as-developer) was verified working, but dropped with
+  the second subscription. The lost model-diversity is compensated in process: mandatory edge-case
+  enumeration → executable tests (`crew/developer.md`), an edge-case-hunter adversarial tester
+  (`crew/tester.md`), and exit-code ground truth — tests don't share any model's blind spots.
+- **Why tiers.** The fixed pipeline taxed every task the same; small tasks paid a 5-LLM-call,
+  2-human-gate toll. Triage by risk × size (the boss doesn't call a meeting to fix a typo, but does
+  call the lawyer for one line in a contract) with a one-way escalation ratchet keeps small things
+  fast and risky things gated.
 - On **pure subscription** you cannot have BOTH process-100% AND full interactive allowance via the
   Agent SDK / `claude -p` (those draw the capped Agent SDK credit). Two native ways out:
   - **Skill** (interactive + Task subagents + hooks) → full allowance + near-100%.
   - **Workflow tool** → process-100% (deterministic JS) AND full interactive allowance (verified: the
     interactive Workflow tool is NOT in the capped Agent-SDK-credit bucket — only the Agent SDK
     library, `claude -p`, GitHub Actions, and third-party apps are).
-  → Company = **native** (skill now; Workflow is the process-100% upgrade path).
+  → **skill now; Workflow is the process-100% upgrade path.**
 
 ## Enforcement (the "100% maestro")
 
