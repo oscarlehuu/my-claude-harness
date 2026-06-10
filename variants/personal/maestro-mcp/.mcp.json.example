@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "maestro": {
+      "command": "node",
+      "args": ["__SERVER__"],
+      "env": {},
+      "timeout": 600000
+    }
+  }
+}

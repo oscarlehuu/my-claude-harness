@@ -1,0 +1,32 @@
+{
+  "summary": "Port pi foreman guard.ts's prose/no-impact carve-out into both maestro guard hooks so the main (CTO) session can directly edit prose/docs and memory .md files while real code edits stay blocked, applying the check only on the already-canonicalized path so traversal (docs/../code) still blocks.",
+  "assumptions": [],
+  "nonGoals": [
+    "Do not weaken any existing block (code files, sed -i on code, redirects to code, docs/../code traversal must still block).",
+    "Do not modify agent_id / engagement / tokenizer / analyze logic.",
+    "Do not handle sed -i or interpreter-write targeting prose (out of scope; bash carve-out only covers benign_target i.e. redirect/tee/cp/dd/mv/ln targets).",
+    "Do not alter the existing .claude/maestro* or tmp/$TMPDIR carve-outs."
+  ],
+  "alternatives": [],
+  "blastRadius": [],
+  "steps": [
+    "In hooks/guard-block-main-edits.sh, after the tmp/scratch 'if [ \"$is_scratch\" -eq 1 ]; then exit 0; fi' block and before the final 'cat >&2 <<MSG', add a prose/docs carve-out: derive basename from $_check_path, lowercase its extension and compare to {md,markdown,mdx,txt,rst,adoc} → exit 0; uppercase its stem and compare to {LICENSE,LICENCE,COPYING,NOTICE,AUTHORS} → exit 0; if $_check_path is under \"$_canon_proj/docs/\" → exit 0. Operate strictly on $_check_path.",
+    "In hooks/guard-block-main-bash.sh benign_target(t), just before 'return False', add the equivalent check on ct: compute basename (reuse module basename()), test the lowercased extension against the prose extensions set, the uppercased stem against the known-names set, and ct.startswith(os.path.join(_canon_proj,'docs')+os.sep) → return True.",
+    "Run the verify command to confirm exit 0."
+  ],
+  "filesLikely": [
+    "hooks/guard-block-main-edits.sh",
+    "hooks/guard-block-main-bash.sh"
+  ],
+  "risks": [
+    "Case-insensitive extension matching in bash must use a portable lowercasing approach (e.g. tr or ${var,,} — bash 4+); macOS default bash is 3.2, so use tr for portability to avoid silently failing the case-insensitive requirement.",
+    "Forgetting the trailing slash on the docs/ prefix could wrongly allow sibling dirs; the plan uses '$_canon_proj/docs/'.",
+    "Extracting the stem/extension must handle dotless names (LICENSE) and names with multiple dots; use basename + last-dot split consistent with pi guard semantics."
+  ],
+  "proposedGates": [],
+  "requirements": {
+    "env": [],
+    "tools": [],
+    "services": []
+  }
+}
