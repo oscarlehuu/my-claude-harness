@@ -93,14 +93,16 @@ Prerequisites: [Claude Code](https://claude.com/claude-code), `jq`, `python3`.
 ```bash
 git clone https://github.com/oscarlehuu/my-claude-harness.git
 cd my-claude-harness
-./install.sh                 # symlink crew+hooks+skill into ~/.claude (global)
+./install.sh                 # symlink crew+hooks+skill+contract into ~/.claude (global)
 # or: ./install.sh /path/to/project   for a project-local install
 ```
 
-Then merge `settings.hooks.json` into your `~/.claude/settings.json` (for a global install, use
-absolute hook paths — `~/.claude/hooks/...`). Open a new Claude Code session anywhere: a
-SessionStart hook puts it in CTO mode, and the first code task gets a one-line triage
-(`Tier: light — ...`) before anything runs.
+The install also links the operating contract — `AGENTS.md` (single source of truth) plus
+`CLAUDE.md` (a pointer that imports it) — so every session loads it; pre-existing non-symlink
+docs are left untouched. Then merge `settings.hooks.json` into your `~/.claude/settings.json`
+(for a global install, use absolute hook paths — `~/.claude/hooks/...`). Open a new Claude Code
+session anywhere: the contract + a SessionStart hook put it in CTO mode, and the first code task
+gets a one-line triage (`Tier: light — ...`) before anything runs.
 
 Per-repo escape hatch: `echo 1 > .claude/maestro-direct` turns the guards off for that repo.
 Budget/protected-path config: `.claude/maestro-budget` (`LINES=50`, `FILES=2`,

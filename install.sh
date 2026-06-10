@@ -14,14 +14,23 @@ for f in "$ROOT"/crew/*.md;  do ln -sfn "$f" "$DEST/agents/$(basename "$f")"; do
 for f in "$ROOT"/hooks/*.sh; do ln -sfn "$f" "$DEST/hooks/$(basename "$f")"; done
 ln -sfn "$ROOT/skills/maestro" "$DEST/skills/maestro"
 
-# AGENTS.md / CLAUDE.md are the assistant's docs. Project-local: link to the project root.
-# Global: do NOT clobber an existing ~/.claude/CLAUDE.md — the charter also lives in the skill.
+# AGENTS.md is the single source of truth; CLAUDE.md is a pointer that imports @AGENTS.md.
+# Project-local: link both to the project root. Global: link both into ~/.claude so the
+# contract loads in every session — but never clobber a CLAUDE.md/AGENTS.md the user wrote
+# themselves (only replace missing files or our own symlinks).
+link_doc() { # $1 = source file, $2 = dest path
+  if [ ! -e "$2" ] || [ -L "$2" ]; then
+    ln -sfn "$1" "$2"
+  else
+    echo "NOTE: $2 exists and is not a symlink — left untouched. Merge $1 manually."
+  fi
+}
 if [ -n "${1:-}" ]; then
-  ln -sfn "$ROOT/AGENTS.md" "$1/AGENTS.md"
-  ln -sfn "$ROOT/CLAUDE.md" "$1/CLAUDE.md"
+  link_doc "$ROOT/AGENTS.md" "$1/AGENTS.md"
+  link_doc "$ROOT/CLAUDE.md" "$1/CLAUDE.md"
 else
-  echo "NOTE: global install does not overwrite ~/.claude/CLAUDE.md."
-  echo "      The CTO charter lives in this repo's AGENTS.md/CLAUDE.md and in skills/maestro/SKILL.md."
+  link_doc "$ROOT/AGENTS.md" "$DEST/AGENTS.md"
+  link_doc "$ROOT/CLAUDE.md" "$DEST/CLAUDE.md"
 fi
 
 echo "Installed maestro crew+hooks+skill into: $DEST"
