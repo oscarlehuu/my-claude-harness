@@ -41,9 +41,14 @@ now = datetime.datetime.now(datetime.timezone.utc)
 ts = now.isoformat().replace("+00:00", "Z")
 rec = {"ts": ts, "epoch": int(now.timestamp()), "exit": code, "cmd": cmd, "durationSec": dur}
 
+def write_json_atomic(path, obj):
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+    os.replace(tmp, path)
+
 os.makedirs(os.path.join(root, ".claude", "maestro"), exist_ok=True)
-with open(os.path.join(root, ".claude", "maestro", "last-verify.json"), "w", encoding="utf-8") as f:
-    json.dump(rec, f, indent=2)
+write_json_atomic(os.path.join(root, ".claude", "maestro", "last-verify.json"), rec)
 
 if slug:
     dir = os.path.join(root, ".claude", "maestro", slug)
@@ -57,8 +62,7 @@ if slug:
                 state = json.load(f)
             state["lastVerify"] = {"ts": ts, "exit": code}
             state["updatedAt"] = ts
-            with open(sp, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2)
+            write_json_atomic(sp, state)
         except Exception:
             pass
 PY

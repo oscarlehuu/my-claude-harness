@@ -37,14 +37,18 @@ state = {
     "lastVerify": None,
     "createdAt": ts, "updatedAt": ts,
 }
-with open(os.path.join(dir, "state.json"), "w", encoding="utf-8") as f:
+# atomic write: temp + rename, so a concurrent hook never reads a half-written file
+path = os.path.join(dir, "state.json")
+tmp = f"{path}.{os.getpid()}.tmp"
+with open(tmp, "w", encoding="utf-8") as f:
     json.dump(state, f, indent=2)
+os.replace(tmp, path)
 with open(os.path.join(dir, "log.jsonl"), "a", encoding="utf-8") as f:
     f.write(json.dumps({"ts": ts, "event": "task_init", "tier": tier, "task": task},
                        separators=(",", ":")) + "\n")
 PY
 
-printf '%s' "$slug" > "$root/.claude/maestro/active"
+printf '%s' "$slug" > "$root/.claude/maestro/active.$$" && mv "$root/.claude/maestro/active.$$" "$root/.claude/maestro/active"
 
 if [ -n "$verify" ]; then
   vf="$root/.claude/maestro-verify"

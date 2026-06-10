@@ -79,8 +79,11 @@ import datetime, json, os, sys
 root, cmd = sys.argv[1], sys.argv[2]
 now = datetime.datetime.now(datetime.timezone.utc)
 os.makedirs(os.path.join(root, ".claude", "maestro"), exist_ok=True)
-with open(os.path.join(root, ".claude", "maestro", "last-verify.json"), "w", encoding="utf-8") as f:
+path = os.path.join(root, ".claude", "maestro", "last-verify.json")
+tmp = f"{path}.{os.getpid()}.tmp"
+with open(tmp, "w", encoding="utf-8") as f:
     json.dump({"ts": now.isoformat().replace("+00:00", "Z"),
                "epoch": int(now.timestamp()), "exit": 0, "cmd": cmd}, f, indent=2)
+os.replace(tmp, path)
 PY
 exit 0

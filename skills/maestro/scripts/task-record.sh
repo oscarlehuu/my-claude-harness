@@ -78,8 +78,10 @@ elif event in {"task_done", "escalated"}:
     closing = True
 
 state["updatedAt"] = ts
-with open(state_path, "w", encoding="utf-8") as f:
+tmp = f"{state_path}.{os.getpid()}.tmp"
+with open(tmp, "w", encoding="utf-8") as f:
     json.dump(state, f, indent=2)
+os.replace(tmp, state_path)
 with open(os.path.join(dir, "log.jsonl"), "a", encoding="utf-8") as f:
     f.write(json.dumps({"ts": ts, "event": event, **kv}, separators=(",", ":")) + "\n")
 
