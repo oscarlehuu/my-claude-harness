@@ -8,6 +8,7 @@ suites=(
   "$ROOT/tests/ledger-scripts.test.sh"
   "$ROOT/tests/gates.test.sh"
   "$ROOT/tests/context-hooks.test.sh"
+  "$ROOT/tests/doc-drift.test.sh"
   "$ROOT/hooks/test/guard_scratch_test.sh"
 )
 
