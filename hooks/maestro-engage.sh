@@ -1,21 +1,46 @@
 #!/usr/bin/env bash
-# SessionStart hook — put the session in maestro/CTO mode so the founder never has to ask.
-# Stdout is injected as session context. Read-only; always exit 0.
-cat <<'MSG'
-[maestro] You are the CTO/orchestrator on a machine running the maestro harness (native, tiered).
-For ANY task that changes code, first TRIAGE it into a tier by risk x size and say so in one line
-(`Tier: light — <reason>`), then run only that tier's stages per the maestro skill:
-  direct   tiny diff inside the guard budget (<=50 lines/2 files), no protected path -> edit directly
-  light    one clear deliverable, verify command known -> 1 developer subagent + task-verify.sh
-  standard multi-file work -> inline plan (post digest, proceed) -> developer -> verify -> tester
-  full     protected paths / migrations / auth / public API -> planner + Gate 1 + tester + reviewer + Gate 2
-Open a ledger for light+ tasks with ~/.claude/skills/maestro/scripts/task-init.sh; record verdicts
-with task-record.sh; verify ONLY via task-verify.sh (ground truth). The ratchet is one-way — escalate
-when the guard blocks you, verify fails twice, or scope grows; never downgrade silently. Hooks enforce
-the tier's DoD at commit and block ending a turn with unverified code. For a ticket in a codebase the
-founder doesn't own, enter via BLIND MODE (see the maestro skill): ground against code+git first,
-route remaining assumptions (code|history|founder|team), emit an English assume-unless-vetoed team
-packet, tier floor = standard. Skip the harness only for pure questions, reading/explaining code,
-recon — or when `.claude/maestro-direct` exists in the repo.
-MSG
+# SessionStart hook — inject the DYNAMIC maestro status for this repo.
+#
+# The static operating contract (role, tiers, gates) is NOT here — it loads via
+# ~/.claude/CLAUDE.md (@AGENTS.md import), which Claude Code re-injects after compaction.
+# This hook's job is what a static file can't know: live state read at fire time —
+# engagement, the open task's tier/round/verify state. It fires on startup, resume,
+# /clear AND compact, so a rebuilt context always gets ground truth from the ledger.
+# Read-only; always exit 0.
+
+input="$(cat 2>/dev/null || true)"
+source_kind="$(printf '%s' "$input" | jq -r '.source // "startup"' 2>/dev/null || echo startup)"
+
+proj="${CLAUDE_PROJECT_DIR:-$PWD}"
+
+echo "[maestro] CTO mode — operating contract is loaded via CLAUDE.md (@AGENTS.md): triage every"
+echo "code task first (\`Tier: <t> — <reason>\`), delegate beyond the guard budget, verify via"
+echo "task-verify.sh (exit code = ground truth)."
+
+if [ "$source_kind" = "compact" ]; then
+  echo "[maestro] Context was just compacted — the status below is re-read from the ledger (ground truth), trust it over the summary."
+fi
+
+if [ -f "$proj/.claude/maestro-direct" ]; then
+  echo "[maestro] This repo is in DIRECT-EDIT mode (guards off): .claude/maestro-direct exists."
+fi
+
+active=""
+[ -f "$proj/.claude/maestro/active" ] && active="$(cat "$proj/.claude/maestro/active" 2>/dev/null)"
+if [ -n "$active" ] && [ -f "$proj/.claude/maestro/$active/state.json" ]; then
+  python3 - "$proj/.claude/maestro/$active/state.json" <<'PY' 2>/dev/null || true
+import json, sys
+try:
+    s = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    sys.exit(0)
+lv = s.get("lastVerify")
+verify = "never ran" if not lv else ("green" if lv.get("exit") == 0 else f"FAILING (exit {lv.get('exit')})")
+print(f"[maestro] OPEN TASK: '{s.get('slug')}' — tier {s.get('tier')}, state {s.get('state')}, "
+      f"round {s.get('round')}, verify {verify}. Resume it (ledger: .claude/maestro/{s.get('slug')}/) "
+      f"or close it with task-record.sh before starting new work.")
+PY
+else
+  echo "[maestro] No open maestro task in this repo."
+fi
 exit 0
