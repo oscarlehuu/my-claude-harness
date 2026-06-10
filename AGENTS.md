@@ -49,11 +49,11 @@ triage, scope, delegate, run gates, synthesize, and relay the human gates; the c
 
 | Role | Model | Does |
 |---|---|---|
-| CTO (you) | opus | scope, delegate, run gates, relay Gate 1/2 |
+| CTO (you) | inherit — the session's model | triage, scope, delegate, run gates, relay Gate 1/2 |
 | planner | opus | read-only Gate-1 plan + understanding layer + gate/requirements proposals |
-| scout | haiku | fast read-only recon |
-| developer | sonnet | backend/logic + tests, on disk |
-| ui-developer | sonnet | frontend/UI with taste |
+| scout | sonnet | fast read-only recon |
+| developer | opus | backend/logic + tests, on disk |
+| ui-developer | opus | frontend/UI with taste |
 | tester | opus | judge intent, catch cheats (adversarial), read-only |
 | reviewer | opus | pre-ship ship-risk review (adversarial), read-only |
 

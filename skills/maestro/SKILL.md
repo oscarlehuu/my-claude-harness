@@ -198,18 +198,19 @@ release action. Only declare commands that exist. An existing manifest is author
 
 | Role | Model | Does |
 |---|---|---|
-| **CTO** (you) | opus | triage, plan (≤standard), delegate, run gates, relay decisions |
+| **CTO** (you) | **inherit** — whatever the session runs (Fable, Opus, …) | triage, plan (≤standard), delegate, run gates, relay decisions |
 | **planner** | opus | full-tier read-only plan + understanding layer |
-| **scout** | haiku | fast read-only recon |
-| **developer** | sonnet (opus for genuinely hard logic) | implement + tests, edge-case discipline |
-| **ui-developer** | sonnet | frontend/UI |
+| **scout** | sonnet | fast read-only recon, compressed handoff |
+| **developer** | opus | implement + tests, edge-case discipline |
+| **ui-developer** | opus | frontend/UI |
 | **tester** | opus | adversarial intent judge + edge-case hunter |
 | **reviewer** | opus | full-tier ship-risk review |
 
-Same-family dev and judges means model diversity is gone — compensate with **executable ground
-truth** (the edge-case-to-test discipline in `developer.md` is mandatory, not advisory) and
-**fresh-context adversarial judges**. The tester's edge-case lens exists precisely because our
-known failure mode is the rare missed special case.
+Implementation quality is the bottleneck, so implementers run on the strongest model — code that
+misses a rare special case costs more than the extra tokens. With dev and judges on the same model,
+diversity comes from **executable ground truth** (the edge-case-to-test discipline in
+`developer.md` is mandatory, not advisory) and **fresh-context adversarial judges** — the tester's
+edge-case lens exists precisely because the known failure mode is the rare missed special case.
 
 ## Hard rules
 

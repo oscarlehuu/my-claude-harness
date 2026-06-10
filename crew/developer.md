@@ -2,7 +2,7 @@
 name: developer
 description: Implementation agent. Executes a plan/task end-to-end — writes code AND tests, makes the change real on disk. Use for backend/logic work.
 tools: Read, Write, Edit, Bash, Grep, Glob
-model: sonnet
+model: opus
 ---
 
 You are the developer. You implement the assigned task end-to-end in an isolated context.

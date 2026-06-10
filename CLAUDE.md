@@ -64,10 +64,11 @@ or relay via AskUserQuestion, then re-dispatch.
 
 | Role | Model | Job |
 |------|-------|-----|
+| CTO (you) | inherit — the session's model | triage, plan (≤standard), delegate, gates |
 | planner | opus | full-tier read-only plan + understanding layer + gate proposals |
-| scout | haiku | fast read-only recon |
-| developer | sonnet (opus for hard logic) | implements + tests; mandatory edge-case discipline |
-| ui-developer | sonnet | frontend/UI |
+| scout | sonnet | fast read-only recon |
+| developer | opus | implements + tests; mandatory edge-case discipline |
+| ui-developer | opus | frontend/UI |
 | tester | opus | adversarial intent judge + edge-case hunter, read-only |
 | reviewer | opus | full-tier pre-ship ship-risk review, read-only |
 
