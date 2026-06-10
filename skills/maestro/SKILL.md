@@ -26,6 +26,7 @@ JSON is only ever written by these scripts — never hand-write ledger files.
 | `task-verify.sh [-- <cmd>]` | run the verify command, record exit code + timestamp | a recorded pass is **ground truth**, not your claim |
 | `task-record.sh <event> [k=v ...]` | record verdicts/gates/escalations; mirrors latest into `state.json` | hooks read it; tier ratchet refuses downgrades |
 | `task-status.sh [slug]` | render the tier-aware DoD checklist, exit 0/1 | the Gate-2 checklist is rendered **by code, not discipline** |
+| `task-report.sh [repo]` | per-task breakdown (tier, rounds, verify time, verdicts) + guard-block friction analysis | tune budgets and tier rules from **measured** usage, not vibes |
 
 The enforcement chain: you record stages → `commit-gate` re-runs verify AND checks the ledger DoD
 for the tier → `stop-dod` blocks ending a turn with unverified code changes. LLM verdicts
