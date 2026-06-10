@@ -114,7 +114,8 @@ skills/maestro/scripts/   task-init · task-verify · task-record · task-status
 crew/                     6 subagent roles: planner · scout · developer · ui-developer · tester · reviewer
 hooks/                    guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · maestro-engage
 docs/                     architecture + decision log · charter/ (gate pipeline, Definition of Done)
-AGENTS.md · CLAUDE.md     project map + CTO operating contract
+AGENTS.md                 project map + CTO operating contract (single source of truth)
+CLAUDE.md                 pointer only — imports @AGENTS.md for Claude Code
 settings.hooks.json       hooks block to merge into .claude/settings.json
 install.sh                idempotent symlink deploy (global or per-project)
 variants/personal/        the retired MCP-server replica — kept as a frozen reference (see below)

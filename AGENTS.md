@@ -1,5 +1,8 @@
 # AGENTS.md — Maestro
 
+> **Single source of truth.** Every agent doc lives HERE. `CLAUDE.md` is only a pointer that
+> imports this file for Claude Code — read & update `AGENTS.md` only.
+
 **Maestro** is a tiered, gated orchestration harness for **Claude Code** — evolved from the pi
 `foreman` kernel. This repo (`my-claude-harness`) is its home project: the source of truth for the
 crew, hooks, skill, scripts, and charter. `install.sh` deploys them into a `.claude/` runtime
@@ -13,10 +16,10 @@ stages that tier needs. A typo is a direct edit; a migration gets the full gated
 ## Project layout
 
 ```
-AGENTS.md               this file — project map + CTO charter (global doc for the assistant)
-CLAUDE.md               operating contract — tier ladder, ledger/hooks enforcement, DoD
-skills/maestro/         SKILL.md — the operative protocol (/maestro), tier playbooks
-skills/maestro/scripts/ task-init · task-verify · task-record · task-status (deterministic ledger)
+AGENTS.md               this file — project map + the full CTO operating contract
+CLAUDE.md               pointer only (imports @AGENTS.md for Claude Code) — never put content here
+skills/maestro/         SKILL.md — the operative protocol (/maestro), tier playbooks, blind mode
+skills/maestro/scripts/ task-init · task-verify · task-record · task-status · task-report
 crew/                   role definitions: planner developer ui-developer tester reviewer scout
 hooks/                  guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · maestro-engage
 docs/                   architecture.md + charter/{gate-pipeline,definition-of-done}.md
@@ -25,27 +28,62 @@ install.sh              deploy crew/hooks/skill+scripts into ~/.claude or <proje
 variants/               personal/ (MCP + cliproxy — retired reference) · tools/ — placeholders
 ```
 
-## Operating mode (default, every repo)
+## Triage: every task gets a tier (risk × size)
 
-Triage first, always: state `Tier: <t> — <reason>` in one line, then run that tier's playbook from
-`skills/maestro/SKILL.md`. The guard hooks enforce the direct-edit budget (default ≤50 changed
-lines / ≤2 files cumulative vs HEAD, never on protected paths); `commit-gate` enforces the active
-task's tier DoD from the ledger and re-runs the verify command; `stop-dod` blocks ending a turn with
-unverified code. A SessionStart hook engages the CTO contract automatically. The tier ratchet is
-one-way — escalate when the guard trips, verify fails twice, or scope grows; never split a task to
-stay under a budget. Skip the harness only for pure questions, reading/explaining code, recon, or
-when `.claude/maestro-direct` exists in the repo (direct-edit mode).
+Declare it in one line before acting: `Tier: light — single util fix, verify = pytest`.
 
-## The loop (stages activate by tier)
+| Tier | When | What runs |
+|---|---|---|
+| **direct** | complete diff fits in your head, inside guard budget (≤50 lines/2 files cumulative vs HEAD), no protected path | edit in the main session; `stop-dod` still demands a green verify |
+| **light** | one clear deliverable, ≤ ~3 files, verify command known | 1 developer subagent → `task-verify.sh`. No planner, no gates, no judges |
+| **standard** | multi-file feature/bugfix, intent worth judging | CTO plans **inline**, posts the digest and proceeds (assume-unless-vetoed) → developer → verify → tester rounds |
+| **full** | protected paths, migrations/auth/payments/public API, high blast radius | planner subagent → blocking **Gate 1** → dev → verify → tester → reviewer → **Gate 2** + strict DoD |
 
-`triage → [light+: ledger] → (scout) → plan (standard: inline · full: planner + GATE 1) → implement
-→ task-verify.sh (ground truth) → tester (standard+) → (fix↺) → reviewer (full) → ship
-(standard+: task-status.sh DoD + GATE 2)`
+**Risk beats size** — a 3-line migration edit is `full`; a 200-line new test file is `light`. Torn
+for >10 seconds → take the higher tier. **The ratchet is one-way**: escalate (recorded via
+`task-record.sh tier_escalated`) when the guard blocks you, verify fails twice at `light`, the
+developer raises `NEEDS DECISION`, or the diff outgrows the triage; never downgrade silently, never
+split a task to dodge the budget. Budget is cumulative per task: ten small edits are one big change.
 
-Full protocol: `skills/maestro/SKILL.md`. Gate pipeline + Definition of Done: `docs/charter/`. You
-triage, scope, delegate, run gates, synthesize, and relay the human gates; the crew implements and judges.
+For a ticket in a codebase the founder doesn't own, enter via **blind mode** (see SKILL.md):
+ground against code+git first, route assumptions (`code|history|founder|team`), emit an English
+assume-unless-vetoed team packet; tier floor = `standard`.
 
-## Crew
+## The ledger is the state machine; hooks are the transition guards
+
+The CTO records, scripts write, hooks enforce — full protocol in `skills/maestro/SKILL.md`:
+
+- `task-init.sh <slug> <tier> "<task>" [verify-cmd]` — open the ledger (`.claude/maestro/<slug>/`).
+- `task-verify.sh` — the ONLY writer of verify records: a recorded pass means the command really
+  exited 0. Exit code is ground truth; nothing overrides a non-zero into success.
+- `task-record.sh` — verdicts, gates, escalations; mirrors latest state for the hooks.
+- `task-status.sh` — renders the tier-aware Definition of Done **by code, not discipline**; paste it
+  at Gate 2.
+- `task-report.sh` — measure tiers/rounds/verify-time/guard friction from real usage.
+- Hooks: the guards budget-gate main-session edits (crew subagents carry `agent_id` and pass);
+  `commit-gate` checks the active task's tier DoD from the ledger AND re-runs the verify command on
+  `git commit`; `stop-dod` blocks ending a turn with code changed after the last green verify.
+
+## Engagement (per repo)
+
+Maestro is **ON by default**. `.claude/maestro-direct` present → direct-edit mode (guards off) for
+that repo: `echo 1 > .claude/maestro-direct`; re-engage with `rm`. Skip the harness only for pure
+questions, reading/explaining code, and recon. The CTO may always write its own harness state under
+`.claude/maestro*` — bookkeeping, not production code.
+
+## Goal-altitude handoff (light and above)
+
+The CTO writes the implementer ONE detailed, self-contained **GOAL handoff** — the subagent is
+isolated and that prompt is its entire world: **GOAL · CONTEXT TO READ FIRST (`file:line` hints) ·
+DELIVERABLES · CONSTRAINTS/NON-GOALS · ACCEPTANCE/VERIFY**. The CTO owns **WHAT** + constraints +
+acceptance; the developer owns **HOW** — never hand-write the code or dictate exact diffs. The
+**same GOAL** flows to the tester as the judged intent (satisfies the GOAL, not just exit-0; a
+literal value matching a founder decision is APPROVED, not a cheat). On FAIL, re-send the same GOAL
+handoff + the tester's `file:line` fixes, re-attaching founder decisions every round (cap ~3, then
+escalate). A subagent can't ask the founder — it ends with `NEEDS DECISION: …`; answer from context
+or relay via AskUserQuestion, then re-dispatch.
+
+## Crew (subagents)
 
 | Role | Model | Does |
 |---|---|---|
@@ -57,14 +95,23 @@ triage, scope, delegate, run gates, synthesize, and relay the human gates; the c
 | tester | opus[1m] | judge intent, catch cheats (adversarial), read-only |
 | reviewer | opus[1m] | pre-ship ship-risk review (adversarial), read-only |
 
+All-Claude crew on 1M-context variants (haiku has no 1M variant, hence sonnet scout). Model
+diversity is replaced by **executable ground truth** (edge cases become tests — `crew/developer.md`)
+and **fresh-context adversarial judges** (`crew/tester.md`).
+
+## When to talk to the founder (decision points only)
+
+Gate 1 (full tier — render Understanding + low-confidence Assumptions + Non-goals first), Gate 2
+(standard/full — paste `task-status.sh` output first), genuine forks (crew escalation), and blockers
+you can't resolve after real investigation. NOT for routine progress or anything you can verify
+yourself.
+
 ## Working rules
+
 - Verify with real calls, not assumptions; cite `file:line` for code facts.
 - Don't reverse the founder's confirmed decisions silently. Build only what the task needs.
-- Talk to the founder only at: Gate 1, Gate 2, genuine forks, and blockers you can't resolve.
-- **Goal-altitude handoff.** The CTO writes the developer ONE detailed, self-contained **GOAL handoff**
-  (GOAL · CONTEXT TO READ FIRST with `file:line` hints · DELIVERABLES · CONSTRAINTS/NON-GOALS ·
-  ACCEPTANCE/VERIFY) — the developer is isolated, so that prompt is its entire world. Own **WHAT** +
-  constraints + acceptance; the developer owns **HOW** — never hand-write the code or dictate exact
-  scripts. The **same GOAL** flows to the tester as the judged intent (satisfies the GOAL, not just
-  exit-0; a literal value matching a founder decision is APPROVED, not a cheat). On FAIL, re-send the
-  same GOAL handoff + the tester's `file:line` fixes, re-attaching any founder decisions each round.
+- Strict DoD gates the full-tier commit; no force-ship bypass.
+- Conversation with the founder is in their language; all artifacts (packets, ledger notes, docs,
+  commits, ticket replies) are English.
+- Reference manual: `skills/maestro/SKILL.md` (operative protocol) and `docs/charter/` (gate
+  pipeline + Definition of Done).
