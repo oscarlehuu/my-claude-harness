@@ -62,6 +62,57 @@ When torn between two tiers for >10 seconds, take the higher one.
 Never de-escalate silently; if a tier feels too heavy mid-task, ask the founder. Never split a task
 into pieces to dodge a tier or the guard budget.
 
+## Blind mode (entry mode — tickets in a codebase you don't own)
+
+Use when the founder hands you a **ticket/task in a repo neither of you deeply understands** (a
+company codebase, an inherited project). The oracle inversion: the founder is a **relay, not a
+source of truth** — truth lives in the ticket, the code, the git/PR history, and the team. Blind
+mode is an entry mode, not a fifth tier: it front-loads grounding, then the work tiers as usual
+with a **floor of `standard`** (there is always a tester — misreading intent in unfamiliar code is
+exactly the expensive-bug case). Conversation with the founder stays in their language; **all
+artifacts (packet, ledger notes, ticket reply, knowledge file) are English**.
+
+**Flow:**
+
+1. **Intake** — founder pastes the ticket text (source doesn't matter). Restate it plainly; build a
+   jargon glossary of terms you can't ground in this repo.
+2. **Ground before asking** — read `.claude/maestro/knowledge.md` first (answers from past tickets;
+   date-stamped hints, re-verify before relying). Spawn `scout` for recon; map every noun in the
+   ticket to real code (`file:line` citations mandatory), mine `git log/blame` and past fixes for
+   the "why"s. Never ask a human what grep or git can answer.
+3. **Assumption ledger with routing** — every remaining gap: statement + confidence + cost-if-wrong
+   + source-of-truth route: `code` (verify it yourself) · `history` (dig git/PRs) · `founder`
+   (taste/priority only) · `team` (domain facts the company knows). No team available → `team`
+   downgrades to `history` + probe tests.
+4. **Team packet** — `team`-routed items become ONE paste-ready English block, capped at ~5
+   questions ranked by cost-if-wrong (the rest: assume + log). Each question: one line of why it
+   matters + a stated default. **Assume-unless-vetoed**: work proceeds on defaults; a veto returns
+   as an ordinary correction. Format:
+
+   > **Questions re: <TICKET-ID> (<one-line summary>)** — defaults in brackets, proceeding on them
+   > unless vetoed by <when>:
+   > 1. <question>? *(matters: <consequence>)* **[assuming <default>]**
+
+5. **Then the normal loop** — triage (floor `standard`), GOAL handoff, dev → verify → tester. The
+   tester judges against the **ticket + received answers** as the GOAL. Close with a draft **ticket
+   reply** (English): what changed, why, what was assumed, what to watch.
+
+**Grounding output contract** (present to the founder before any implementation):
+
+```
+Understand ticket:   plain-language restatement + file:line grounding + jargon resolved/unresolved
+Assumptions:         each with (confidence) (cost-if-wrong) (route: code|history|founder|team)
+Plan:                ordered steps, scoped to the ticket
+Goal:                the GOAL handoff guarantees — no production bug (blast radius covered),
+                     ticket scope fully covered, tests implemented and passing via task-verify.sh
+Team packet:         (only if team-routed questions exist)
+```
+
+**Knowledge compounds.** Append every received team answer to `.claude/maestro/knowledge.md`
+(`Q / A / date / who`); grounding reads it first on the next ticket, so each ticket makes the repo
+less blind. When entries stabilize, offer the founder to promote them into `docs/` as real
+documentation — teammate words become docs.
+
 ## 2. Plan (standard: inline · full: planner subagent)
 
 - **standard** — write the plan yourself in conversation: Understanding (1-2 sentences), approach,

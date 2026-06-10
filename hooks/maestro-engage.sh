@@ -12,7 +12,10 @@ For ANY task that changes code, first TRIAGE it into a tier by risk x size and s
 Open a ledger for light+ tasks with ~/.claude/skills/maestro/scripts/task-init.sh; record verdicts
 with task-record.sh; verify ONLY via task-verify.sh (ground truth). The ratchet is one-way — escalate
 when the guard blocks you, verify fails twice, or scope grows; never downgrade silently. Hooks enforce
-the tier's DoD at commit and block ending a turn with unverified code. Skip the harness only for pure
-questions, reading/explaining code, recon — or when `.claude/maestro-direct` exists in the repo.
+the tier's DoD at commit and block ending a turn with unverified code. For a ticket in a codebase the
+founder doesn't own, enter via BLIND MODE (see the maestro skill): ground against code+git first,
+route remaining assumptions (code|history|founder|team), emit an English assume-unless-vetoed team
+packet, tier floor = standard. Skip the harness only for pure questions, reading/explaining code,
+recon — or when `.claude/maestro-direct` exists in the repo.
 MSG
 exit 0

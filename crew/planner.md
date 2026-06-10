@@ -78,4 +78,18 @@ Apply YAGNI / KISS / DRY / scale-and-maintain as a **self-critique lens, not bad
 the simplest thing that works, justify any added complexity, prefer reusing/editing existing code over
 new machinery, and name the real tension when these principles pull against each other.
 
+## Blind mode addendum
+
+When the handoff says **BLIND MODE** (a ticket in a codebase the founder doesn't own), additionally:
+- Read `.claude/maestro/knowledge.md` first if present (date-stamped answers from past tickets —
+  treat as hints to re-verify, not facts).
+- Ground every claim: map the ticket's nouns to real code with `file:line` citations; mine
+  `git log`/`blame`/past fixes before flagging anything as unknown. Never raise a question that
+  grep or git history can answer.
+- Tag every assumption with a source-of-truth **route**: `code` (orchestrator can verify from the
+  repo) · `history` (git/PRs answer it) · `founder` (taste/priority/scope) · `team` (domain fact
+  only the company knows). Add a **Jargon** subsection for ticket terms you could not ground.
+- `team`-routed items must be phrased so they can go into a paste-ready English packet: one line of
+  why it matters + a sensible assume-unless-vetoed default.
+
 Keep each section tight — legible over exhaustive.

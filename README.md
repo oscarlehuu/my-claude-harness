@@ -70,6 +70,22 @@ ledger as a FAIL signal on its own.
 
 **Risk beats size**: a 3-line migration edit is `full`; a 200-line new test file is `light`.
 
+## Blind mode — tickets in a codebase you don't own
+
+The tier ladder assumes you can judge risk. **Blind mode** covers the day-job case where you can't:
+a ticket lands in a company codebase neither you nor the orchestrator deeply understands. The role
+inversion: you become a **relay, not an oracle** — truth lives in the ticket, the code, the git/PR
+history, and your team.
+
+The orchestrator grounds the ticket against code and git history **before asking any human
+anything** (never ask what grep can answer), routes each remaining assumption to its source of
+truth (`code` / `history` / `founder` / `team`), and compresses the `team`-routed unknowns into one
+paste-ready, **assume-unless-vetoed** packet — max ~5 questions ranked by cost-if-wrong, each with a
+stated default, so work proceeds while answers trickle in. Received answers append to a per-repo
+knowledge file that the next ticket's grounding reads first: **every ticket makes the repo less
+blind**, and stabilized entries get promoted into real docs. Implementation floor is `standard` —
+in unfamiliar code there is always an adversarial tester judging the diff against the ticket.
+
 ## Quickstart
 
 Prerequisites: [Claude Code](https://claude.com/claude-code), `jq`, `python3`.
