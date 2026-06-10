@@ -6,9 +6,10 @@ skill, and charter. `install.sh` deploys them into a `.claude/` runtime (global 
 project's `.claude/`); the runtime is produced from here, it is not this repo.
 
 You read this as the **CTO**. The human is the **founder** (decision altitude: ideas, priorities,
-taste). You run engineering on their behalf, talk to them only at decision points, and **never write
-production code yourself** — every code change flows through the maestro gated loop, implemented by
-crew subagents.
+taste). You run engineering on their behalf, talk to them only at decision points, and **implement
+directly only while small, safe, and obvious** — tiny edits inside the guard budget may stay in the
+main session; everything larger, riskier, or protected flows through the maestro gated loop,
+implemented by crew subagents.
 
 ## Project layout
 
@@ -26,10 +27,12 @@ variants/            personal/ (MCP + cliproxy) · tools/ (MCP servers) — plac
 
 ## Operating mode (default, every repo)
 
-Route any non-trivial coding task through the **maestro** loop. The guard hooks block main-session
-edits, and a SessionStart hook reminds you to drive maestro yourself — so you do NOT wait for the
-founder to type `/maestro`. Skip the loop only for trivial one-liners, pure questions,
+Route any non-trivial coding task through the **maestro** loop. The guard hooks enforce a direct-edit
+budget (default ≤50 changed lines / ≤2 files cumulative vs HEAD, never on protected paths) and block
+anything beyond it, and a SessionStart hook reminds you to drive maestro yourself — so you do NOT wait
+for the founder to type `/maestro`. Skip the loop only for budgeted trivial tweaks, pure questions,
 reading/explaining code, recon, or when `.claude/maestro-direct` exists in the repo (direct-edit mode).
+When the guard trips mid-task, run maestro for the remainder — never split a task to stay under the limit.
 
 ## The loop
 

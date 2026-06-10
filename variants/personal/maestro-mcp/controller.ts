@@ -90,7 +90,13 @@ const PLAN_JSON_KEYS =
 function changeDiff(cwd: string): string {
   try {
     execSync("git add -A", { cwd, stdio: "ignore" });
-    return execSync("git diff --cached", { cwd, encoding: "utf8", maxBuffer: 8 * 1024 * 1024 }).slice(0, 60000);
+    // Exclude maestro's own ledger/state from the judged diff: it sorts first alphabetically and
+    // is large enough to consume the size cap before any production change appears, leaving the
+    // tester/reviewer to judge pure harness noise.
+    return execSync(
+      "git diff --cached -- . ':(exclude).claude/maestro*' ':(exclude)*.DS_Store'",
+      { cwd, encoding: "utf8", maxBuffer: 8 * 1024 * 1024 },
+    ).slice(0, 150000);
   } catch {
     return "(no git repo — diff unavailable)";
   }
@@ -203,7 +209,19 @@ async function implementCycle(ledger: Ledger, cwd: string, progress: (l: string)
   }
   ledger.writeHandoff(`round-${round}-dev`, devContext);
   const devJson = extractJsonBlock(devRes.finalText, "DEV-JSON") ?? {};
-  const filesChanged: string[] = Array.isArray(devJson.filesChanged) ? devJson.filesChanged : [];
+  let filesChanged: string[] = Array.isArray(devJson.filesChanged) ? devJson.filesChanged : [];
+  if (filesChanged.length === 0) {
+    // DEV-JSON can be missing/garbled even when real work landed; an empty list misleads the
+    // tester ("developer reported filesChanged: []") and the release-commit staging. Recover
+    // the truth from git, excluding maestro's own state.
+    try {
+      execSync("git add -A", { cwd, stdio: "ignore" });
+      filesChanged = execSync(
+        "git diff --cached --name-only -- . ':(exclude).claude/maestro*' ':(exclude)*.DS_Store'",
+        { cwd, encoding: "utf8" },
+      ).split("\n").filter(Boolean);
+    } catch { /* no git repo — leave empty */ }
+  }
   ledger.log({ type: "dev_done", round, filesChanged });
 
   let commandGates: "pass" | "fail" | "n/a" = "n/a";

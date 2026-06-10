@@ -139,7 +139,19 @@ function resolveIn(cwd: string, p: string): string {
   return abs;
 }
 
+// Models drift between tool-naming conventions (Bash vs bash, Read vs read_file) — an exact-match
+// dispatch turns that cosmetic drift into repeated unknown-tool errors that can trip the loop-breaker.
+const TOOL_ALIASES: Record<string, string> = {
+  read: "read_file", cat: "read_file", ls: "list_dir", list: "list_dir", search: "grep",
+  shell: "bash", sh: "bash", write: "write_file", edit: "edit_file", multiedit: "edit_file",
+};
+function canonicalToolName(name: string): string {
+  const lower = String(name).toLowerCase();
+  return TOOL_ALIASES[lower] ?? lower;
+}
+
 function executeTool(name: string, args: any, cwd: string, role: Role): string {
+  name = canonicalToolName(name);
   try {
     switch (name) {
       case "read_file":
@@ -171,7 +183,7 @@ function executeTool(name: string, args: any, cwd: string, role: Role): string {
         return `edited ${args.path}`;
       }
       default:
-        return `ERROR: unknown tool ${name}`;
+        return `ERROR: unknown tool ${name} — valid tools: read_file, list_dir, grep, bash${WRITER_ROLES.includes(role) ? ", write_file, edit_file" : ""}`;
     }
   } catch (e: any) {
     return `ERROR: ${e?.message ?? String(e)}`;
