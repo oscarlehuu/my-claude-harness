@@ -6,6 +6,9 @@
 # without a commit. Prose/docs/harness-state edits never trip it (same no-count rules
 # as the guard), and `stop_hook_active` prevents a block loop.
 set -eu
+_src="${BASH_SOURCE[0]}"; while [ -L "$_src" ]; do _src="$(readlink "$_src")"; done
+. "$(cd "$(dirname "$_src")" && pwd)/lib-log.sh" 2>/dev/null && mlog_init stop-dod Stop || true
+
 
 input="$(cat)"
 

@@ -19,6 +19,9 @@
 # enforcement to the coded-controller (MCP) variant, where crew run as separate processes
 # and this main-vs-subagent distinction is moot.
 set -eu
+_src="${BASH_SOURCE[0]}"; while [ -L "$_src" ]; do _src="$(readlink "$_src")"; done
+. "$(cd "$(dirname "$_src")" && pwd)/lib-log.sh" 2>/dev/null && mlog_init guard-block-main-edits PreToolUse || true
+
 
 input="$(cat)"
 agent_id="$(printf '%s' "$input" | jq -r '.agent_id // empty' 2>/dev/null || true)"

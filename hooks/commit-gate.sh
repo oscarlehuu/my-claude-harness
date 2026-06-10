@@ -9,6 +9,9 @@
 #      ground truth; no recorded claim can substitute for it.
 # No active task → layer 1 is skipped (plain repos keep the old verify-only behavior).
 set -eu
+_src="${BASH_SOURCE[0]}"; while [ -L "$_src" ]; do _src="$(readlink "$_src")"; done
+. "$(cd "$(dirname "$_src")" && pwd)/lib-log.sh" 2>/dev/null && mlog_init commit-gate PreToolUse || true
+
 
 input="$(cat)"
 cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null || true)"

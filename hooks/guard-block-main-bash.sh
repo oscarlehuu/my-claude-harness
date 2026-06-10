@@ -16,6 +16,39 @@ import sys, json, shlex, os, re, functools, subprocess, datetime, fnmatch
 
 HOOK = "guard-block-main-bash"
 
+# Uniform hook observability (bash hooks source lib-log.sh; this python hook wraps
+# sys.exit): one JSONL line per run to .claude/maestro/hook-log.jsonl, never blocking.
+import time as _mlog_time
+_MLOG_T0 = _mlog_time.time()
+_mlog_real_exit = sys.exit
+
+def _mlog_exit(code=0):
+    try:
+        proj = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+        if os.path.isdir(os.path.join(proj, ".claude")):
+            d = os.path.join(proj, ".claude", "maestro")
+            os.makedirs(d, exist_ok=True)
+            f = os.path.join(d, "hook-log.jsonl")
+            c = int(code or 0)
+            status = "block" if c == 2 else ("ok" if c == 0 else "error")
+            rec = {"ts": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+                   "hook": HOOK, "event": "PreToolUse", "exit": c, "status": status,
+                   "durSec": int(_mlog_time.time() - _MLOG_T0)}
+            with open(f, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
+            with open(f, encoding="utf-8") as fh:
+                lines = fh.readlines()
+            if len(lines) > 1000:
+                tmp = f + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    fh.writelines(lines[-500:])
+                os.replace(tmp, f)
+    except Exception:
+        pass
+    _mlog_real_exit(code)
+
+sys.exit = _mlog_exit
+
 
 def allow():
     sys.exit(0)

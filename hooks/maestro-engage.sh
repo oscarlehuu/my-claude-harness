@@ -7,6 +7,9 @@
 # engagement, the open task's tier/round/verify state. It fires on startup, resume,
 # /clear AND compact, so a rebuilt context always gets ground truth from the ledger.
 # Read-only; always exit 0.
+_src="${BASH_SOURCE[0]}"; while [ -L "$_src" ]; do _src="$(readlink "$_src")"; done
+. "$(cd "$(dirname "$_src")" && pwd)/lib-log.sh" 2>/dev/null && mlog_init maestro-engage SessionStart || true
+
 
 input="$(cat 2>/dev/null || true)"
 source_kind="$(printf '%s' "$input" | jq -r '.source // "startup"' 2>/dev/null || echo startup)"

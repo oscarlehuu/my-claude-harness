@@ -119,6 +119,46 @@ if os.path.exists(guard_path):
                     blocks.append(json.loads(line))
                 except Exception:
                     pass
+# Hook activity: one JSONL line per hook run (written by hooks/lib-log.sh).
+hook_path = os.path.join(dir, "hook-log.jsonl")
+runs = []
+if os.path.exists(hook_path):
+    with open(hook_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    runs.append(json.loads(line))
+                except Exception:
+                    pass
+print()
+if not runs:
+    print("hook activity: none recorded")
+else:
+    agg = {}
+    for r in runs:
+        k = r.get("hook", "?")
+        a = agg.setdefault(k, {"runs": 0, "blocks": 0, "errors": 0, "dur": 0, "maxDur": 0})
+        a["runs"] += 1
+        a["dur"] += int(r.get("durSec", 0) or 0)
+        a["maxDur"] = max(a["maxDur"], int(r.get("durSec", 0) or 0))
+        if r.get("status") == "block":
+            a["blocks"] += 1
+        elif r.get("status") == "error":
+            a["errors"] += 1
+    print(f"hook activity ({len(runs)} runs):")
+    for k in sorted(agg, key=lambda x: -agg[x]["runs"]):
+        a = agg[k]
+        extras = []
+        if a["blocks"]:
+            extras.append(f"{a['blocks']} blocks")
+        if a["errors"]:
+            extras.append(f"{a['errors']} errors")
+        if a["maxDur"]:
+            extras.append(f"max {fmt_dur(a['maxDur'])}")
+        suffix = f"  ({', '.join(extras)})" if extras else ""
+        print(f"  {k:<24} {a['runs']:>4} runs, {fmt_dur(a['dur'])} total{suffix}")
+
 print()
 if not blocks:
     print("guard blocks: none recorded")

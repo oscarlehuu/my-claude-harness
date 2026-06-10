@@ -8,6 +8,9 @@
 # Non-crew agents get nothing (exit 0, no output). Read-only; always exit 0.
 
 input="$(cat 2>/dev/null || true)"
+_src="${BASH_SOURCE[0]}"; while [ -L "$_src" ]; do _src="$(readlink "$_src")"; done
+. "$(cd "$(dirname "$_src")" && pwd)/lib-log.sh" 2>/dev/null && mlog_init crew-context SubagentStart || true
+
 [ -z "$input" ] && exit 0
 
 MAESTRO_HOOK_INPUT="$input" python3 - <<'PY'
