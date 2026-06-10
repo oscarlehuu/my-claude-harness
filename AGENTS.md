@@ -50,12 +50,12 @@ triage, scope, delegate, run gates, synthesize, and relay the human gates; the c
 | Role | Model | Does |
 |---|---|---|
 | CTO (you) | inherit — the session's model | triage, scope, delegate, run gates, relay Gate 1/2 |
-| planner | opus | read-only Gate-1 plan + understanding layer + gate/requirements proposals |
-| scout | sonnet | fast read-only recon |
-| developer | opus | backend/logic + tests, on disk |
-| ui-developer | opus | frontend/UI with taste |
-| tester | opus | judge intent, catch cheats (adversarial), read-only |
-| reviewer | opus | pre-ship ship-risk review (adversarial), read-only |
+| planner | opus[1m] | read-only Gate-1 plan + understanding layer + gate/requirements proposals |
+| scout | sonnet[1m] | fast read-only recon |
+| developer | opus[1m] | backend/logic + tests, on disk |
+| ui-developer | opus[1m] | frontend/UI with taste |
+| tester | opus[1m] | judge intent, catch cheats (adversarial), read-only |
+| reviewer | opus[1m] | pre-ship ship-risk review (adversarial), read-only |
 
 ## Working rules
 - Verify with real calls, not assumptions; cite `file:line` for code facts.

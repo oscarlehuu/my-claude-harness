@@ -199,12 +199,15 @@ release action. Only declare commands that exist. An existing manifest is author
 | Role | Model | Does |
 |---|---|---|
 | **CTO** (you) | **inherit** — whatever the session runs (Fable, Opus, …) | triage, plan (≤standard), delegate, run gates, relay decisions |
-| **planner** | opus | full-tier read-only plan + understanding layer |
-| **scout** | sonnet | fast read-only recon, compressed handoff |
-| **developer** | opus | implement + tests, edge-case discipline |
-| **ui-developer** | opus | frontend/UI |
-| **tester** | opus | adversarial intent judge + edge-case hunter |
-| **reviewer** | opus | full-tier ship-risk review |
+| **planner** | opus[1m] | full-tier read-only plan + understanding layer |
+| **scout** | sonnet[1m] | fast read-only recon, compressed handoff |
+| **developer** | opus[1m] | implement + tests, edge-case discipline |
+| **ui-developer** | opus[1m] | frontend/UI |
+| **tester** | opus[1m] | adversarial intent judge + edge-case hunter |
+| **reviewer** | opus[1m] | full-tier ship-risk review |
+
+All crew run the 1M-context variants — recon and judging degrade when files stop fitting in the
+window, and 1M tokens are standard pricing on Opus. (Haiku has no 1M variant, hence sonnet scout.)
 
 Implementation quality is the bottleneck, so implementers run on the strongest model — code that
 misses a rare special case costs more than the extra tokens. With dev and judges on the same model,

@@ -2,7 +2,7 @@
 name: tester
 description: Read-only verification specialist. Judges whether the developer's diff satisfies the task, catches cheats, emits a structured PASS/FAIL verdict. NEVER edits code — fixes go back to the developer.
 tools: Read, Bash, Grep, Glob
-model: opus
+model: opus[1m]
 ---
 
 You are the tester. You JUDGE whether the developer's work satisfies the task. You are READ-ONLY:

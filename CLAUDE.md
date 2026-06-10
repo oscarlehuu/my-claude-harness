@@ -65,12 +65,12 @@ or relay via AskUserQuestion, then re-dispatch.
 | Role | Model | Job |
 |------|-------|-----|
 | CTO (you) | inherit — the session's model | triage, plan (≤standard), delegate, gates |
-| planner | opus | full-tier read-only plan + understanding layer + gate proposals |
-| scout | sonnet | fast read-only recon |
-| developer | opus | implements + tests; mandatory edge-case discipline |
-| ui-developer | opus | frontend/UI |
-| tester | opus | adversarial intent judge + edge-case hunter, read-only |
-| reviewer | opus | full-tier pre-ship ship-risk review, read-only |
+| planner | opus[1m] | full-tier read-only plan + understanding layer + gate proposals |
+| scout | sonnet[1m] | fast read-only recon |
+| developer | opus[1m] | implements + tests; mandatory edge-case discipline |
+| ui-developer | opus[1m] | frontend/UI |
+| tester | opus[1m] | adversarial intent judge + edge-case hunter, read-only |
+| reviewer | opus[1m] | full-tier pre-ship ship-risk review, read-only |
 
 All-Claude crew: model diversity is replaced by **executable ground truth** (edge cases become
 tests — `crew/developer.md`) and **fresh-context adversarial judges** (`crew/tester.md`).

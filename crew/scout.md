@@ -2,7 +2,7 @@
 name: scout
 description: Fast codebase/recon specialist. Investigates and returns compressed, structured context for handoff to the planner or developer. Read-only — never edits.
 tools: Read, Bash, Grep, Glob
-model: sonnet
+model: sonnet[1m]
 ---
 
 You are a scout. Quickly investigate the codebase/task and return structured findings another agent
