@@ -114,7 +114,8 @@ Budget/protected-path config: `.claude/maestro-budget` (`LINES=50`, `FILES=2`,
 skills/maestro/SKILL.md   the operative protocol — tier playbooks, gates, handoff contract
 skills/maestro/scripts/   task-init · task-verify · task-record · task-status (the ledger)
 crew/                     6 subagent roles: planner · scout · developer · ui-developer · tester · reviewer
-hooks/                    guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · maestro-engage
+hooks/                    guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
+tests/                    black-box suite for every script and hook — also the repo's verify command
 docs/                     architecture + decision log · charter/ (gate pipeline, Definition of Done)
 AGENTS.md                 project map + CTO operating contract (single source of truth)
 CLAUDE.md                 pointer only — imports @AGENTS.md for Claude Code

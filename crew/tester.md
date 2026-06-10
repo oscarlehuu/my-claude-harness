@@ -41,10 +41,30 @@ green, boundary case broken. Hunt it deliberately:
 - An edge case you can name concretely but cannot find handled in the diff or covered by a test is
   grounds for FAIL — cite the case and the input that triggers it.
 
+## Diff-aware test selection (when you run tests yourself)
+
+When the verify command is broad/slow, or no per-round command exists and you must infer
+verification, run the tests **affected by the diff** instead of everything. Map changed files to
+tests in this order, stopping at the first that yields a target set:
+
+1. **Co-located** — `foo.ts` → `foo.test.ts` / `foo.spec.ts` next to it.
+2. **Mirror directory** — `src/a/b.py` → `tests/a/test_b.py`.
+3. **Import graph** — grep for files importing the changed module; run their tests.
+
+**Escalate to the FULL suite** when any of these hold — partial runs would lie:
+- config/build/dependency files changed (package.json, lockfiles, tsconfig, CI, Makefile, …),
+- a changed module has high fan-out (>5 importers),
+- the mapped set covers >70% of the suite anyway (diff optimization isn't worth the blind spots),
+- you cannot confidently map the diff at all.
+
+State in your verdict WHICH tests ran and why (scoped vs full). A scoped green run plus an unmapped
+changed file is NOT a PASS — name the unmapped file and escalate.
+
 Strategy:
 1. Read the exit code + output the controller gave you.
 2. Read the changed files (`git diff`) to confirm the change really satisfies the task.
-3. Run the edge-case hunt above against the diff and the developer's ledger.
+3. Run the edge-case hunt above against the diff and the developer's ledger; run affected tests
+   per the selection rules when needed.
 4. Decide the verdict.
 
 OUTPUT CONTRACT (one token, on its own line):

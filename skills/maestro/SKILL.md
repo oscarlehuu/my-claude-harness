@@ -151,6 +151,12 @@ Run `task-verify.sh` after the developer reports. Exit code is truth: non-zero =
 regardless of anyone's opinion. At `full` with a `.claude/maestro.json`, run every `per-round`
 command gate in declaration order instead.
 
+**Scope the per-round verify to the diff** when the full suite is slow: pick the affected tests
+(co-located → mirror dir → import graph), and reserve the full suite for pre-ship. Escalate to the
+full suite per round when config/build/dependency files changed, a touched module has >5 importers,
+or the mapped set covers >70% of the suite anyway. Never let a scoped green run stand in for an
+unmapped changed file — the tester applies the same rules (see `crew/tester.md`) and will FAIL it.
+
 ## 5. Tester (standard/full — judge intent, catch cheats)
 
 Spawn `tester` (read-only) with the **same GOAL handoff** + the verify exit/output. It judges

@@ -26,7 +26,8 @@ CLAUDE.md               pointer only (imports @AGENTS.md for Claude Code) — ne
 skills/maestro/         SKILL.md — the operative protocol (/maestro), tier playbooks, blind mode
 skills/maestro/scripts/ task-init · task-verify · task-record · task-status · task-report
 crew/                   role definitions: planner developer ui-developer tester reviewer scout
-hooks/                  guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · maestro-engage
+hooks/                  guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
+tests/                  black-box test suite for every script and hook (also the repo verify command)
 docs/                   architecture.md + charter/{gate-pipeline,definition-of-done}.md
 settings.hooks.json     the hooks block to merge into .claude/settings.json
 install.sh              deploy crew/hooks/skill+scripts into ~/.claude or <project>/.claude
