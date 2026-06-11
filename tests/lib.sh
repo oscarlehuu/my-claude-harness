@@ -4,8 +4,8 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPTS="$ROOT/skills/maestro/scripts"
-HOOKS="$ROOT/hooks"
+SCRIPTS="$ROOT/maestro/scripts"
+HOOKS="$ROOT/maestro/hooks"
 
 PASS=0
 FAIL=0

@@ -113,17 +113,19 @@ Budget/protected-path config: `.claude/maestro-budget` (`LINES=50`, `FILES=2`,
 ## Layout
 
 ```
-skills/maestro/SKILL.md   the operative protocol — tier playbooks, gates, handoff contract
-skills/maestro/scripts/   task-init · task-verify · task-record · task-status (the ledger)
-crew/                     6 subagent roles: planner · scout · developer · ui-developer · tester · reviewer
-hooks/                    guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
+maestro/                  the harness domain — everything that runs
+  SKILL.md                  the operative protocol: tier playbooks, blind mode, the loop
+  crew/                     the team — Austin, Gabriel, Faber, Lucia, Thomas, Petros (named, with per-repo memory)
+  hooks/                    guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
+  scripts/                  the ledger + HQ toolbox: task-init/verify/record/status/report · queue-add · team-board
+  charter/                  gate pipeline · Definition of Done
+hq/                       office deployment kit — chief-of-staff template + bootstrap (a live HQ is your own private repo)
 tests/                    black-box suite for every script and hook — also the repo's verify command
-docs/                     architecture + decision log · charter/ (gate pipeline, Definition of Done)
+docs/                     architecture + decision log
 AGENTS.md                 project map + CTO operating contract (single source of truth)
 CLAUDE.md                 pointer only — imports @AGENTS.md for Claude Code
 settings.hooks.json       hooks block to merge into .claude/settings.json
 install.sh                idempotent symlink deploy (global or per-project)
-variants/personal/        the retired MCP-server replica — kept as a frozen reference (see below)
 ```
 
 ## Where this came from (the short version)
@@ -134,7 +136,7 @@ variants/personal/        the retired MCP-server replica — kept as a frozen re
 2. **maestro-mcp** — a faithful MCP-server replica for Claude Code, verified milestone by milestone
    (M1–M7: cross-provider crew, byte-identical decision modules, loop-breaker). It worked — and got
    retired anyway: an MCP server owning the loop is a black box. You see what goes in, not what it
-   does. `variants/personal/maestro-mcp/MIGRATION-STATUS.md` documents that chapter.
+   does. That chapter lives in this repo's git history.
 3. **maestro native** (this) — the same hard guarantees rebuilt on Claude Code's own primitives,
    plus the tier ladder the fixed pipeline always needed. The state machine became files + hooks;
    the loop became visible; small tasks got fast.
@@ -148,7 +150,7 @@ The enforcement chain is smoke-tested end-to-end (ledger lifecycle, one-way ratc
 commit blocking, stale-verdict invalidation, stop-hook loop guard):
 
 ```bash
-bash hooks/test/guard_scratch_test.sh   # guard carve-outs
+bash tests/run-all.sh                   # the whole suite (also what CI runs)
 # the scripts are exercised live by the harness itself — open a task and watch the ledger:
 ~/.claude/skills/maestro/scripts/task-init.sh demo light "try the ledger" "true"
 ~/.claude/skills/maestro/scripts/task-verify.sh && ~/.claude/skills/maestro/scripts/task-status.sh

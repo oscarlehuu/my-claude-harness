@@ -10,7 +10,7 @@ suites=(
   "$ROOT/tests/context-hooks.test.sh"
   "$ROOT/tests/doc-drift.test.sh"
   "$ROOT/tests/hq-board.test.sh"
-  "$ROOT/hooks/test/guard_scratch_test.sh"
+  "$ROOT/tests/guard.test.sh"
 )
 
 failed=0

@@ -29,7 +29,7 @@ watch every step.
 - **Why native (over the MCP replica).** An MCP server owning the loop was built and verified
   (M1–M7, multi-provider crew via cliproxy) — then retired: the founder couldn't see inside it.
   Native subagents + ledger files + hooks give the same hard outcomes with full observability;
-  `variants/personal/maestro-mcp` is kept as a frozen reference of that chapter.
+  that chapter is preserved in this repo's git history (pre-restructure).
 - **Why all-Claude crew.** Cross-model dev (gpt-as-developer) was verified working, but dropped with
   the second subscription. The lost model-diversity is compensated in process: mandatory edge-case
   enumeration → executable tests (`crew/developer.md`), an edge-case-hunter adversarial tester

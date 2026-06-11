@@ -8,7 +8,7 @@ set -eu
 cd "$ROOT"
 
 # --- crew frontmatter `model:` must appear in the AGENTS.md and SKILL.md tables ---
-for f in crew/*.md; do
+for f in maestro/crew/*.md; do
   name="$(sed -n 's/^name: //p' "$f" | head -1)"
   model="$(sed -n 's/^model: //p' "$f" | head -1)"
   if [ -z "$name" ] || [ -z "$model" ]; then
@@ -20,7 +20,7 @@ for f in crew/*.md; do
   else
     _result fail "AGENTS.md table matches crew/$name ($model)" "no row '| $name | $model |' — table drifted from frontmatter"
   fi
-  if grep -qF "| **$name** | $model |" skills/maestro/SKILL.md; then
+  if grep -qF "| **$name** | $model |" maestro/SKILL.md; then
     _result ok "SKILL.md table matches crew/$name ($model)"
   else
     _result fail "SKILL.md table matches crew/$name ($model)" "no row '| **$name** | $model |' — table drifted from frontmatter"
@@ -28,7 +28,7 @@ for f in crew/*.md; do
 done
 
 # --- every hook file must be listed in the AGENTS.md layout; no ghost listings ---
-for h in hooks/*.sh; do
+for h in maestro/hooks/*.sh; do
   base="$(basename "$h" .sh)"
   case "$base" in lib-*) continue ;; esac   # shared libs are not hooks
   if grep -q "$base" AGENTS.md; then
@@ -39,7 +39,7 @@ for h in hooks/*.sh; do
 done
 
 # --- every ledger script must be mentioned in AGENTS.md ---
-for s in skills/maestro/scripts/*.sh; do
+for s in maestro/scripts/*.sh; do
   base="$(basename "$s" .sh)"
   if grep -q "$base" AGENTS.md; then
     _result ok "AGENTS.md mentions script $base"
@@ -51,7 +51,7 @@ done
 # --- settings.hooks.json must reference only hooks that exist on disk ---
 while IFS= read -r ref; do
   base="$(basename "$ref")"
-  if [ -f "hooks/$base" ]; then
+  if [ -f "maestro/hooks/$base" ]; then
     _result ok "settings.hooks.json -> hooks/$base exists"
   else
     _result fail "settings.hooks.json -> hooks/$base exists" "referenced hook not on disk"

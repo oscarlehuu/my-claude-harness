@@ -21,17 +21,19 @@ stages that tier needs. A typo is a direct edit; a migration gets the full gated
 ## Project layout
 
 ```
-AGENTS.md               this file — project map + the full CTO operating contract
-CLAUDE.md               pointer only (imports @AGENTS.md for Claude Code) — never put content here
-skills/maestro/         SKILL.md — the operative protocol (/maestro), tier playbooks, blind mode
-skills/maestro/scripts/ task-init · task-verify · task-record · task-status · task-report · queue-add · team-board
-crew/                   role definitions: planner developer ui-developer tester reviewer scout
-hooks/                  guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
-tests/                  black-box test suite for every script and hook (also the repo verify command)
-docs/                   architecture.md + charter/{gate-pipeline,definition-of-done}.md
-settings.hooks.json     the hooks block to merge into .claude/settings.json
-install.sh              deploy crew/hooks/skill+scripts into ~/.claude or <project>/.claude
-variants/               personal/ (MCP + cliproxy — retired reference) · tools/ — placeholders
+AGENTS.md            this file — project map + the full CTO operating contract
+CLAUDE.md            pointer only (imports @AGENTS.md for Claude Code) — never put content here
+maestro/             the harness domain — everything that runs
+  SKILL.md             the operative protocol (/maestro): tier playbooks, blind mode
+  crew/                the team: planner · scout · developer · ui-developer · tester · reviewer
+  hooks/               guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
+  scripts/             task-init · task-verify · task-record · task-status · task-report · queue-add · team-board
+  charter/             gate-pipeline.md · definition-of-done.md
+hq/                  the office deployment kit — templates/AGENTS.md · bootstrap.sh (a live HQ is a separate private repo)
+tests/               black-box suite for every script and hook (also the repo verify command)
+docs/                architecture.md + decision log
+settings.hooks.json  the hooks block to merge into .claude/settings.json
+install.sh           symlink deploy into ~/.claude or <project>/.claude
 ```
 
 ## Triage: every task gets a tier (risk × size)
@@ -51,13 +53,13 @@ for >10 seconds → take the higher tier. **The ratchet is one-way**: escalate (
 developer raises `NEEDS DECISION`, or the diff outgrows the triage; never downgrade silently, never
 split a task to dodge the budget. Budget is cumulative per task: ten small edits are one big change.
 
-For a ticket in a codebase the founder doesn't own, enter via **blind mode** (see SKILL.md):
+For a ticket in a codebase the founder doesn't own, enter via **blind mode** (see maestro/SKILL.md):
 ground against code+git first, route assumptions (`code|history|founder|team`), emit an English
 assume-unless-vetoed team packet; tier floor = `standard`.
 
 ## The ledger is the state machine; hooks are the transition guards
 
-The CTO records, scripts write, hooks enforce — full protocol in `skills/maestro/SKILL.md`:
+The CTO records, scripts write, hooks enforce — full protocol in `maestro/SKILL.md`:
 
 - `task-init.sh <slug> <tier> "<task>" [verify-cmd]` — open the ledger (`.claude/maestro/<slug>/`).
 - `task-verify.sh` — the ONLY writer of verify records: a recorded pass means the command really
@@ -106,8 +108,8 @@ or relay via AskUserQuestion, then re-dispatch.
 The crew have names, voices, and **persistent per-repo memory** (`memory: project` — each maintains
 a MEMORY.md of what it learned about the repo). Address and report them by name; they sign their
 work. All-Claude crew on 1M-context variants (haiku has no 1M variant, hence sonnet scout). Model
-diversity is replaced by **executable ground truth** (edge cases become tests — `crew/developer.md`)
-and **fresh-context adversarial judges** (`crew/tester.md`).
+diversity is replaced by **executable ground truth** (edge cases become tests — `maestro/crew/developer.md`)
+and **fresh-context adversarial judges** (`maestro/crew/tester.md`).
 
 ## When to talk to the founder (decision points only)
 
@@ -123,5 +125,5 @@ yourself.
 - Strict DoD gates the full-tier commit; no force-ship bypass.
 - Conversation with the founder is in their language; all artifacts (packets, ledger notes, docs,
   commits, ticket replies) are English.
-- Reference manual: `skills/maestro/SKILL.md` (operative protocol) and `docs/charter/` (gate
+- Reference manual: `maestro/SKILL.md` (operative protocol) and `maestro/charter/` (gate
   pipeline + Definition of Done).
