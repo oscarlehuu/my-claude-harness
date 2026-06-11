@@ -73,6 +73,34 @@ ledger as a FAIL signal on its own.
 
 **Risk beats size**: a 3-line migration edit is `full`; a 200-line new test file is `light`.
 
+## The crew
+
+The work is done by a named team of subagents. **Maestro** — the CTO — is the session itself: it
+triages, writes the GOAL handoffs, runs the gates, and talks to you only at decision points.
+Everyone else runs in an isolated context and signs their work:
+
+| Name | Role | Model | Character |
+|---|---|---|---|
+| **Austin** (Augustinus) | planner | opus[1m] | the architect of understanding — refuses to design what he doesn't yet understand; read-only Gate-1 plans the founder approves before any code |
+| **Gabriel** | scout | sonnet[1m] | the messenger — fast, compressed recon; carries back only what the next agent needs, with `file:line` receipts |
+| **Faber** (*homo faber*) | developer | opus[1m] | the master craftsman — real implementations, honest error paths, tests that bite; despises mocks-to-pass and buried TODOs |
+| **Lucia** | ui-developer | opus[1m] | patron of sight and light — interfaces through the user's eyes first: clarity, rhythm, accessibility before cleverness |
+| **Thomas** | tester | opus[1m] | the doubter — believes nothing he hasn't seen fail or survive an honest attempt to break it; judges intent, hunts cheats |
+| **Petros** | reviewer | opus[1m] | keeper of the keys — nothing ships through his gate on charm; pre-ship ship-risk only, protective of production above all |
+
+Three design choices hide in that table:
+
+- **Names are load-bearing, not decoration.** Each member keeps **per-repo memory** (a `MEMORY.md`
+  auto-loaded every run): Gabriel the repo map, Faber its conventions and build quirks, Thomas the
+  cheats he has caught before, Petros past incidents. The crew gets smarter about your codebase
+  with every task — and a signed report tells you exactly whose judgment you're reading.
+- **Hands and judges are separated by contract.** Only Faber and Lucia may write to disk. Austin,
+  Gabriel, Thomas, and Petros are read-only — a verdict can never quietly "fix" the thing it judged.
+- **All-Claude, on 1M-context variants.** Where multi-model setups buy safety through model
+  diversity, maestro buys it through **executable ground truth** (edge cases must become tests)
+  and **fresh-context adversarial judges**: Thomas receives the same GOAL the developer did, in a
+  clean context — the developer's rationalizations never leak into the verdict.
+
 ## Blind mode — tickets in a codebase you don't own
 
 The tier ladder assumes you can judge risk. **Blind mode** covers the day-job case where you can't:
