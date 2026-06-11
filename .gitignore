@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 node_modules/
+# Harness runtime state — local work-state, never product (ledgers, crew memory, hook log).
+.claude/
