@@ -31,7 +31,7 @@ maestro/             the harness domain — everything that runs
   crew/                the team: planner · scout · developer · ui-developer · tester · reviewer
   hooks/               guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
   scripts/             task-init · task-verify · task-record · task-status · task-report · queue-add · team-board · registry-add
-  charter/             gate-pipeline.md · definition-of-done.md · crew-evaluation.md
+  charter/             gate-pipeline.md · definition-of-done.md · retro-loop.md
 hq/                  the office deployment kit — templates/AGENTS.md · bootstrap.sh (a live HQ is a separate private repo)
 rules/               the founder's global engineering rules — install.sh deploys them to .claude/rules
 tests/               black-box suite for every script and hook (also the repo verify command)
@@ -68,7 +68,10 @@ The CTO records, scripts write, hooks enforce — full protocol in `maestro/SKIL
 - `task-init.sh <slug> <tier> "<task>" [verify-cmd]` — open the ledger (`.claude/maestro/<slug>/`).
 - `task-verify.sh` — the ONLY writer of verify records: a recorded pass means the command really
   exited 0. Exit code is ground truth; nothing overrides a non-zero into success.
-- `task-record.sh` — verdicts, gates, escalations; mirrors latest state for the hooks.
+- `task-record.sh` — verdicts, gates, escalations, `lesson` events (defect + suspected component
+  — fuel for the retro loop, `maestro/charter/retro-loop.md`); mirrors latest state for the hooks.
+  Judge reports are saved verbatim to `.claude/maestro/<slug>/verdicts/round-<N>-<role>.md` BEFORE
+  their one-line summary is recorded — the file is the evidence, the summary is the CTO's words.
 - `task-status.sh` — renders the tier-aware Definition of Done **by code, not discipline**; paste it
   at Gate 2.
 - `task-report.sh` — measure tiers/rounds/verify-time/guard friction from real usage.

@@ -163,7 +163,8 @@ unmapped changed file — the tester applies the same rules (see `crew/tester.md
 
 Spawn `tester` (read-only) with the **same GOAL handoff** + the verify exit/output. It judges
 whether the work genuinely satisfies the GOAL — adversarially, default-refuted, hunting hardcoded
-outputs / weakened tests / stubs / missed edge cases. Record:
+outputs / weakened tests / stubs / missed edge cases. Save the full report verbatim to
+`.claude/maestro/<slug>/verdicts/round-<N>-tester.md`, THEN record:
 `task-record.sh tester_verdict verdict=PASS|FAIL|PARTIAL|BLOCKED summary="..."`.
 Founder-decided literal values are APPROVED, not hardcoded cheats.
 
@@ -172,12 +173,15 @@ Founder-decided literal values are APPROVED, not hardcoded cheats.
 On verify failure or `FAIL`: `task-record.sh round_started` (this resets recorded verdicts — they
 judged the old diff), re-dispatch the implementer with the same GOAL handoff **plus** the concrete
 `file:line` fixes. Up to **3 rounds**, then escalate to the founder. `PARTIAL`/`BLOCKED` → escalate,
-don't loop blindly.
+don't loop blindly. Anything that cost a round, blocked wrongly, or exposed a CTO error also gets a
+`task-record.sh lesson summary="<what> + <suspected component>"` — fuel for the retro loop
+(`charter/retro-loop.md`).
 
 ## 7. Pre-ship review (full only)
 
 After a green round: run `pre-ship` command gates, then spawn `reviewer` (read-only, adversarial)
-on the diff. Record `task-record.sh reviewer_verdict verdict=APPROVE|REQUEST_CHANGES|INCONCLUSIVE`.
+on the diff. Save the full review verbatim to `.claude/maestro/<slug>/verdicts/round-<N>-reviewer.md`,
+then record `task-record.sh reviewer_verdict verdict=APPROVE|REQUEST_CHANGES|INCONCLUSIVE`.
 `REQUEST_CHANGES` reopens the round; `INCONCLUSIVE` blocks strict DoD (re-run for a clean verdict).
 At `standard`, spawn the reviewer only when the diff turned out riskier than triaged — and if it
 did, that's usually a sign to escalate the tier instead.
