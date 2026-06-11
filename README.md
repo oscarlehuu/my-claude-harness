@@ -11,8 +11,9 @@
 no proxy, no daemon. The whole loop runs inside the conversation where you can watch every step,
 and the state lives in plain files you can `cat`.
 
-**License:** MIT · **Status:** personal harness, shared as a portfolio piece — built and shipped
-through its own gated loop (the task ledgers under `.claude/maestro/` are the receipts).
+**License:** MIT · **Status:** in daily use and team-ready — built and shipped through its own
+gated loop (the task ledgers under `.claude/maestro/` are the receipts). Rolling it out to a
+team is a per-machine install; see [Rolling it out to a team](#rolling-it-out-to-a-team).
 
 ---
 
@@ -109,6 +110,45 @@ gets a one-line triage (`Tier: light — ...`) before anything runs.
 Per-repo escape hatch: `echo 1 > .claude/maestro-direct` turns the guards off for that repo.
 Budget/protected-path config: `.claude/maestro-budget` (`LINES=50`, `FILES=2`,
 `PROTECTED=**/auth/**:**/migrations/**`).
+
+## Rolling it out to a team
+
+The install is **per-machine, not per-repo** — each teammate runs their own; nothing is added to
+company repos and there is nothing to deploy or operate centrally.
+
+```bash
+git clone https://github.com/oscarlehuu/my-claude-harness.git && cd my-claude-harness
+./install.sh && bash tests/run-all.sh    # a green suite = the rails work on this machine
+```
+
+then merge `settings.hooks.json` as in the Quickstart. What a team gains over N people each
+driving vanilla Claude Code their own way:
+
+- **One shared discipline, zero shared infra.** Every task gets the same triage → verify → gate
+  treatment regardless of whose laptop it runs on. No server, no telemetry — every byte of state
+  is a local file you can `cat`.
+- **"Tests passed" is an exit code, not a claim.** `task-verify.sh` records what actually ran;
+  the commit gate re-runs it. The difference matters most on days when nobody has time to check.
+- **Receipts for review.** Each task leaves a ledger; `task-report.sh` turns ledgers into numbers
+  (tier mix, tester rounds, verify time, guard friction) — evidence for tuning the process instead
+  of debating it.
+- **Company codebases are first-class.** Blind mode (above) was built for exactly the
+  ticket-in-unfamiliar-code case: ground against code and git history first, then one
+  assume-unless-vetoed packet for the team instead of a drip of questions.
+
+House rules that keep it tidy:
+
+- Add `.claude/maestro*` to the company repo's `.gitignore` or your global excludes — ledgers are
+  local work-state, not product.
+- Guards don't fit a particular repo? `echo 1 > .claude/maestro-direct` switches just that repo to
+  direct-edit mode; the ledger scripts keep working.
+- Optionally give each person an **HQ** — a small private repo with a queue, standup board, and
+  per-repo knowledge across everything they work on: see [hq/README.md](hq/README.md).
+
+**Uninstalling is symmetric:** everything the installer creates is a symlink into `.claude/`
+(`agents/`, `hooks/`, `skills/maestro`, `AGENTS.md`, `CLAUDE.md`). Delete the symlinks and the
+hooks block from `settings.json`, and Claude Code is back to stock; repos keep only their plain-file
+ledgers, which you can delete or keep as history.
 
 ## Layout
 
