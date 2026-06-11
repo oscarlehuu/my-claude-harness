@@ -31,7 +31,7 @@ maestro/             the harness domain — everything that runs
   crew/                the team: planner · scout · developer · ui-developer · tester · reviewer
   hooks/               guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
   scripts/             task-init · task-verify · task-record · task-status · task-report · queue-add · team-board · registry-add
-  charter/             gate-pipeline.md · definition-of-done.md
+  charter/             gate-pipeline.md · definition-of-done.md · crew-evaluation.md
 hq/                  the office deployment kit — templates/AGENTS.md · bootstrap.sh (a live HQ is a separate private repo)
 rules/               the founder's global engineering rules — install.sh deploys them to .claude/rules
 tests/               black-box suite for every script and hook (also the repo verify command)
