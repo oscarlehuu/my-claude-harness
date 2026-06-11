@@ -138,7 +138,9 @@ world, every dispatch, all five sections:
   speed lever: a good handoff saves whole fix rounds.
 - **DELIVERABLES** — concrete, numbered.
 - **CONSTRAINTS / NON-GOALS** — what not to touch.
-- **ACCEPTANCE / VERIFY** — the verify command + judged edge cases.
+- **ACCEPTANCE / VERIFY** — the verify command + judged edge cases. Encode every load-bearing
+  constraint (security rule, invariant, founder-decided value) as a **demanded test named in the
+  handoff**, not prose only — a prose-only constraint can pass a judge once on a weaker build.
 
 You own **WHAT**; the developer owns **HOW** — don't dictate diffs. Re-attach the same handoff
 (plus founder decisions) every fix round. Record the handoff under `.claude/maestro/<slug>/`.
@@ -172,8 +174,11 @@ Founder-decided literal values are APPROVED, not hardcoded cheats.
 
 On verify failure or `FAIL`: `task-record.sh round_started` (this resets recorded verdicts — they
 judged the old diff), re-dispatch the implementer with the same GOAL handoff **plus** the concrete
-`file:line` fixes. Up to **3 rounds**, then escalate to the founder. `PARTIAL`/`BLOCKED` → escalate,
-don't loop blindly. Anything that cost a round, blocked wrongly, or exposed a CTO error also gets a
+`file:line` fixes. **At round 3 without a PASS, stop and checkpoint the founder before round 4** —
+state the structural cause and the proposed change of approach, and record it with
+`task-record.sh round_cap_checkpoint summary="..."` (a plain note event). The checkpoint is mandatory;
+the founder decides whether to continue. `PARTIAL`/`BLOCKED` → escalate, don't loop blindly. Anything
+that cost a round, blocked wrongly, or exposed a CTO error also gets a
 `task-record.sh lesson summary="<what> + <suspected component>"` — fuel for the retro loop
 (`charter/retro-loop.md`).
 

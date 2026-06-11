@@ -68,4 +68,31 @@ assert_contains "$(cat .claude/maestro/demo/state.json)" '"round": 2' "round cou
 assert_file_absent .claude/maestro/active "task_done clears active pointer"
 assert_contains "$(cat .claude/maestro/demo/state.json)" '"state": "done"' "task closed in state.json"
 
+# --- task-status: "Judge verdicts archived" DoD row (full tier, judged tasks) ----
+# Full tier + a tester verdict but no verdicts/ dir → row present, [x].
+"$SCRIPTS/task-init.sh" judged full "judged task" "bash check.sh" >/dev/null
+"$SCRIPTS/task-record.sh" gate1_approved >/dev/null
+"$SCRIPTS/task-verify.sh" >/dev/null   # check.sh currently exits 0
+"$SCRIPTS/task-record.sh" tester_verdict verdict=PASS >/dev/null
+"$SCRIPTS/task-record.sh" reviewer_verdict verdict=APPROVE >/dev/null
+set +e; out_missing="$("$SCRIPTS/task-status.sh" 2>&1)"; set -e
+assert_contains "$out_missing" "[x] Judge verdicts archived" "missing verdicts/ → row present and unmet"
+assert_contains "$out_missing" "save reports verbatim to verdicts/" "row carries the archive hint"
+
+# Empty verdicts/ dir is the same as missing → still [x].
+mkdir -p .claude/maestro/judged/verdicts
+set +e; out_empty="$("$SCRIPTS/task-status.sh" 2>&1)"; set -e
+assert_contains "$out_empty" "[x] Judge verdicts archived" "empty verdicts/ → row present and unmet"
+
+# A saved verdict file flips the row to [v].
+printf 'VERDICT: PASS\n' > .claude/maestro/judged/verdicts/round-1-tester.md
+set +e; out_full="$("$SCRIPTS/task-status.sh" 2>&1)"; set -e
+assert_contains "$out_full" "[v] Judge verdicts archived" "non-empty verdicts/ → row met"
+
+# Lower tiers never carry the row — light-tier task, even with a verdict path, has none.
+"$SCRIPTS/task-init.sh" lightjob light "light task" "bash check.sh" >/dev/null
+"$SCRIPTS/task-verify.sh" >/dev/null
+set +e; out_light="$("$SCRIPTS/task-status.sh" 2>&1)"; set -e
+assert_not_contains "$out_light" "Judge verdicts archived" "light tier → row absent"
+
 summary "ledger-scripts"

@@ -25,8 +25,12 @@ implementation yourself. On a fix round you get the same GOAL handoff plus the t
 Our known failure mode is the **rare missed special case** — code that looks right, passes the happy
 path, and bites later. The defense is a written discipline, in this order:
 
-1. **Enumerate BEFORE implementing.** Write down (in your working notes, surfaced later in
-   `## Notes`) the edge cases this change must survive. Walk the checklist explicitly:
+1. **Enumerate BEFORE implementing.** Write the edge-case ledger as a **task-dir artifact** —
+   `.claude/maestro/<slug>/edge-cases.md` — not just notes in your head or your final report. List
+   the edge cases this change must survive, and keep the file **current through the final round**
+   (update it on every fix round). A report-only or stale ledger is **unfinished work and a FAIL
+   signal for the tester** — the artifact is the evidence, your `## Notes` summary points at it.
+   Walk the checklist explicitly:
    empty / null / zero / negative / boundary (first, last, exactly-at-limit, one-past-limit) /
    duplicate / already-exists / concurrent or re-entrant / error path & partial failure /
    unicode & weird encodings / clock & timezone / very large input. Most won't apply — say so —
@@ -66,9 +70,10 @@ What was done.
 The exact command the tester should run (e.g. `python3 -m pytest -q`).
 
 ## Notes
-Assumptions, anything the tester/CTO should know, and your **edge-case ledger**: the cases you
-enumerated, which got a test, which were N/A and why. The tester will judge you against this list —
-an empty or lazy list is itself a FAIL signal.
+Assumptions, anything the tester/CTO should know, and a pointer to your **edge-case ledger** artifact
+(`.claude/maestro/<slug>/edge-cases.md`) — the cases you enumerated, which got a test, which were N/A
+and why. Summarize the ledger here; the artifact is the kept-current source of truth. The tester will
+judge you against that list — a missing, empty, or stale ledger is itself a FAIL signal.
 
 ## MACHINE BLOCK (end your response with this exact block)
 ---DEV-JSON---

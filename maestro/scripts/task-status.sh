@@ -42,6 +42,12 @@ if tier == "full":
     checks.append(("Plan approved (Gate 1)", bool(s.get("gate1Approved")), ""))
     rv = s.get("lastReviewerVerdict")
     checks.append(("Reviewer APPROVE", rv == "APPROVE", rv or "no review this round"))
+    # Only judged full-tier tasks owe archived verdicts — if no judge ran, no row.
+    if s.get("lastTesterVerdict") or s.get("lastReviewerVerdict"):
+        vd = os.path.join(dir, "verdicts")
+        archived = os.path.isdir(vd) and bool(os.listdir(vd))
+        checks.append(("Judge verdicts archived", archived,
+                       "" if archived else "save reports verbatim to verdicts/"))
 else:
     checks.append(("Plan approved (Gate 1)", None, "n/a below full tier"))
     checks.append(("Reviewer APPROVE", None, "n/a below full tier"))

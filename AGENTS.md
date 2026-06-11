@@ -99,12 +99,18 @@ questions, reading/explaining code, and recon. The CTO may always write its own 
 The CTO writes the implementer ONE detailed, self-contained **GOAL handoff** — the subagent is
 isolated and that prompt is its entire world: **GOAL · CONTEXT TO READ FIRST (`file:line` hints) ·
 DELIVERABLES · CONSTRAINTS/NON-GOALS · ACCEPTANCE/VERIFY**. The CTO owns **WHAT** + constraints +
-acceptance; the developer owns **HOW** — never hand-write the code or dictate exact diffs. The
-**same GOAL** flows to the tester as the judged intent (satisfies the GOAL, not just exit-0; a
-literal value matching a founder decision is APPROVED, not a cheat). On FAIL, re-send the same GOAL
-handoff + the tester's `file:line` fixes, re-attaching founder decisions every round (cap ~3, then
-escalate). A subagent can't ask the founder — it ends with `NEEDS DECISION: …`; answer from context
-or relay via AskUserQuestion, then re-dispatch.
+acceptance; the developer owns **HOW** — never hand-write the code or dictate exact diffs. **ACCEPTANCE
+must encode every load-bearing constraint** — security rule, invariant, founder-decided value — as a
+**demanded test named in the handoff**, not prose only: a constraint left as prose can pass a judge
+once on a weaker implementation, where a named-and-demanded test cannot. The **same GOAL** flows to
+the tester as the judged intent (satisfies the GOAL, not just exit-0; a literal value matching a
+founder decision is APPROVED, not a cheat). On FAIL, re-send the same GOAL handoff + the tester's
+`file:line` fixes, re-attaching founder decisions every round. **At round 3 without a PASS, stop and
+checkpoint the founder before round 4** — state the structural cause and the proposed change of
+approach, and record it in the ledger (`task-record.sh round_cap_checkpoint summary="..."`, a plain
+note event). The checkpoint is mandatory; the founder decides whether to continue. A subagent can't
+ask the founder — it ends with `NEEDS DECISION: …`; answer from context or relay via AskUserQuestion,
+then re-dispatch.
 
 ## Crew (subagents)
 
@@ -138,5 +144,10 @@ yourself.
 - Strict DoD gates the full-tier commit; no force-ship bypass.
 - Conversation with the founder is in their language; all artifacts (packets, ledger notes, docs,
   commits, ticket replies) are English.
+- **Lesson routing** — route every learning by its subject: about the current repo/project →
+  Maestro's project memory (autonomous); about the company → HQ `conventions.md` (founder nods);
+  about the human → `~/.claude/me.md` (founder approves the wording — it is injected everywhere).
+  When `me.md` reaches its 60-line cap: distill first, split a pointer-linked overflow file second,
+  never raise the cap by default.
 - Reference manual: `maestro/SKILL.md` (operative protocol) and `maestro/charter/` (gate
   pipeline + Definition of Done).

@@ -22,6 +22,11 @@ write a useful plan):
 - The app surface (web / mobile / CLI / library / service) and the concrete files likely touched.
 - **Blast radius:** impacted surfaces, dependents, and persistence/state/config touchpoints where an
   inconsistent *partial* change could spread.
+- **Guard / security / access-control work** — the plan MUST enumerate the full **exemption AND
+  detection surface**: every path that grants an exemption (who/where the carve-out is honored, at
+  every scope), and every input form the detector must recognize. A half-mapped surface is exactly
+  where guard fixes spawn extra rounds — the bypass or the unhandled input form hides in the layer
+  the plan skipped.
 - SAFETY: report env/secret NAMES and short reasons only — never read, echo, or store secret VALUES.
   `.env.example`/templates are fine for names; real `.env` files are not.
 
@@ -42,7 +47,10 @@ At least one credible approach you explored and rejected, each with a concrete r
 not filler. (Omit only if the task is genuinely single-path — and say so.)
 
 ## Blast radius
-Impact / dependents / surfaces where an inconsistent change could spread (carried from recon).
+Impact / dependents / surfaces where an inconsistent change could spread (carried from recon). For
+guard / security / access-control work, enumerate the full exemption surface (every path that grants
+a carve-out, at every scope) AND the detection surface (every input form the detector must recognize)
+— half-mapped surface is where guard fixes spawn extra rounds.
 
 ## Plan
 3–7 concrete, ordered steps scoped to the task. No unrelated work.
