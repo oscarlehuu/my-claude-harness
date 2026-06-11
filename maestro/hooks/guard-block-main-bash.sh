@@ -70,12 +70,15 @@ except Exception:
 if data.get("agent_id"):
     allow()
 
-# Engagement OFF for this repo (.claude/maestro-direct) → direct-edit mode, allow.
+# Direct-edit mode is a per-TARGET-repo property, resolved per target in PHASE A below — NEVER a
+# session early-exit. A session-anchored marker check here would let a session in repo A (direct
+# mode) write repo B's PROTECTED files before B's gate ever runs (exemptions must never union
+# outward across a repo boundary). The session repo's marker still applies exactly where the
+# session repo IS the governing repo: same-repo writes (PHASE A resolves the session repo as the
+# target's repo and honors its marker at step (2)) and the no-target fallback (a command with no
+# identifiable target, e.g. `git reset --hard`, resolves `repo` to the session repo, whose marker
+# PHASE A step (2) then honors). _proj is the session root, used only as the fallback anchor.
 _proj = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-if os.path.exists(os.path.join(_proj, ".claude", "maestro-direct")) or os.path.exists(
-    os.path.join(".claude", "maestro-direct")
-):
-    allow()
 
 command = ((data.get("tool_input") or {}).get("command") or "")
 if not command.strip():
@@ -119,8 +122,8 @@ _CANON_TMP_ROOTS = _build_tmp_roots()
 def _canon(t):
     """Return the canonical (realpath-normalized) form of path t.
 
-    Relative mutation targets are interpreted relative to the project root, matching
-    the repo used for budget/protected checks rather than the hook process cwd.
+    Relative mutation targets are interpreted relative to the session project root —
+    that is the command's effective cwd, the natural base for a relative shell path.
     """
     try:
         base = t if os.path.isabs(t) else os.path.join(_proj, t)
@@ -128,6 +131,106 @@ def _canon(t):
         return os.path.realpath(base)
     except Exception:
         return t
+
+
+def _git_toplevel(d):
+    """git work-tree root containing dir d, or '' if d is in no repo / git unavailable."""
+    try:
+        return os.path.realpath(
+            subprocess.check_output(
+                ["git", "-C", d, "rev-parse", "--show-toplevel"],
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+        )
+    except Exception:
+        return ""
+
+
+def _nearest_existing_dir(ct):
+    """Walk ct's dirname up to the nearest EXISTING ancestor (a write may create new dirs)."""
+    d = os.path.dirname(ct) or "/"
+    while d and d != "/" and not os.path.isdir(d):
+        d = os.path.dirname(d)
+    return d
+
+
+@functools.lru_cache(maxsize=256)
+def target_repo(ct):
+    """Innermost repo root governing canonical path ct, resolved from the TARGET.
+
+    A command can touch a file in a sibling/child repo while the session sits elsewhere;
+    that file must be judged by ITS OWN repo's carve-outs, budget and protected list.
+    git -C <nonexistent-dir> fails and a write can create a brand-new dir, so we walk up
+    to the nearest existing ancestor before querying git. Falls back to the session repo
+    when the target is outside any repo / unresolvable (preserves today's fail-open).
+    This anchors BUDGET and CARVE-OUTS to the innermost repo (round-1 behaviour); the
+    PROTECTED check additionally consults the enclosing chain (see enclosing_repos).
+    """
+    d = _nearest_existing_dir(ct)
+    if d and os.path.isdir(d):
+        top = _git_toplevel(d)
+        if top:
+            return top
+    top = _git_toplevel(os.path.realpath(_proj))
+    return top or os.path.realpath(_proj)
+
+
+@functools.lru_cache(maxsize=256)
+def enclosing_repos(ct):
+    """All git repo roots enclosing canonical path ct, ordered innermost → outermost.
+
+    A repo nested inside a protected subtree of an OUTER repo (vendored dep with its own
+    .git, accidental `git init`, fixture repo under src/) would otherwise resolve only to
+    the inner root — which carries none of the outer repo's PROTECTED config, silently
+    exempting protected code. The PROTECTED gate is a UNION over this chain: if ANY
+    enclosing repo's protected list matches the target by THAT repo's own relative path,
+    block. Carve-outs/budget never union outward — only protection does.
+
+    Bounded walk: from the innermost repo root, step to its parent dir and ask git for the
+    next enclosing work tree, repeating until git finds none (filesystem root). realpath is
+    resolved once per step; git is queried once per enclosing level (a handful at most).
+    """
+    chain = []
+    inner = target_repo(ct)
+    # target_repo falls back to _proj even when ct is in no repo; only treat it as a real
+    # enclosing root if it is genuinely a git work tree.
+    d = _nearest_existing_dir(ct)
+    if not (d and os.path.isdir(d) and _git_toplevel(d)):
+        return tuple()
+    cur = inner
+    seen = set()
+    while cur and cur not in seen:
+        seen.add(cur)
+        chain.append(cur)
+        parent = os.path.dirname(cur)
+        if not parent or parent == cur:
+            break
+        outer = _git_toplevel(parent)
+        if not outer or outer in seen:
+            break
+        cur = outer
+    return tuple(chain)
+
+
+@functools.lru_cache(maxsize=256)
+def outer_protects(ct):
+    """True if any STRICTLY-OUTER enclosing repo protects ct by its own relative path.
+
+    Exemptions must never flow across repo boundaries: a carve-out anchored to the INNER
+    (target) repo — docs/, .claude/maestro ledger, harness-state, scratch, even a .md prose
+    file — must not whitelist a path that an OUTER repo protects (the inner repo lives inside
+    the outer repo's protected subtree). benign_target() consults this so outer protection
+    always wins over inner carve-outs; the innermost repo's own protected list is enforced
+    later by the budget/protected gate (with accurate usage in its log).
+    """
+    chain = enclosing_repos(ct)
+    if len(chain) < 2:
+        return False  # no strictly-outer repo → nothing can leak outward
+    for repo in chain[1:]:
+        _, _, prot = load_config(repo)
+        if any(glob_match(repo, p, ct) for p in prot):
+            return True
+    return False
 
 
 def benign_target(t):
@@ -139,24 +242,30 @@ def benign_target(t):
     # /tmp/../../<repo>/file or .claude/maestro/../../hooks/guard.sh are resolved
     # to their real location before any carve-out check.
     ct = _canon(t)
+    # Exemptions never cross repo boundaries: if a STRICTLY-OUTER enclosing repo protects ct
+    # (the target's inner repo sits inside that outer repo's protected subtree), NO carve-out
+    # below applies — the path is a real mutation target and the protected union will block it.
+    if outer_protects(ct):
+        return False
+    # Repo-relative carve-outs are anchored to the TARGET's repo, not the session — the
+    # anchor moves as one piece so a parent-anchored carve-out can't whitelist a child file.
+    _repo = target_repo(ct)
     # Maestro harness-state carve-out — allow ONLY the exact canonical paths that
-    # are maestro's own bookkeeping, anchored to the real repo root.  An unanchored
+    # are maestro's own bookkeeping, anchored to the target's repo root.  An unanchored
     # substring match would allow traversal OUT of .claude/maestro/ into production
     # code, and would also match unrelated paths that merely contain the substring
     # (e.g. skills/.claude/maestro-evil.ts, .claude/maestroX/anything).
-    _canon_proj = os.path.realpath(_proj)
     _maestro_exact = {
-        os.path.join(_canon_proj, ".claude", "maestro.json"),
-        os.path.join(_canon_proj, ".claude", "maestro-verify"),
-        os.path.join(_canon_proj, ".claude", "maestro-direct"),
+        os.path.join(_repo, ".claude", "maestro.json"),
+        os.path.join(_repo, ".claude", "maestro-verify"),
+        os.path.join(_repo, ".claude", "maestro-direct"),
     }
-    _maestro_ledger_prefix = os.path.join(_canon_proj, ".claude", "maestro") + os.sep
+    _maestro_ledger_prefix = os.path.join(_repo, ".claude", "maestro") + os.sep
     if ct in _maestro_exact or ct.startswith(_maestro_ledger_prefix):
         return True
-    _canon_proj = os.path.realpath(_proj)
-    # Scratch carve-out is for no-impact files outside the repo. If the project itself
-    # lives under TMPDIR during tests, keep repo paths budget/protected-gated.
-    if any(ct.startswith(r) for r in _CANON_TMP_ROOTS) and not (ct == _canon_proj or ct.startswith(_canon_proj + os.sep)):
+    # Scratch carve-out is for no-impact files outside the repo. If the target itself
+    # lives under TMPDIR but inside a repo (e.g. tmpdir test repos), keep it gated.
+    if any(ct.startswith(r) for r in _CANON_TMP_ROOTS) and not (ct == _repo or ct.startswith(_repo + os.sep)):
         return True
 
     # Prose/docs/no-impact carve-out — allow direct writes to documentation/memory files.
@@ -168,7 +277,7 @@ def benign_target(t):
         return True
     if _stem.upper() in {"LICENSE", "LICENCE", "COPYING", "NOTICE", "AUTHORS"}:
         return True
-    _docs_prefix = os.path.join(os.path.realpath(_proj), "docs") + os.sep
+    _docs_prefix = os.path.join(_repo, "docs") + os.sep
     if ct.startswith(_docs_prefix):
         return True
 
@@ -546,20 +655,77 @@ if not result:
     allow()
 reason, target = result
 
-# If git cannot be queried, fail open: tester/reviewer/commit-gate remain the
+# Root the governing repo on the TARGET the command touches, not the session dir, so a
+# command mutating a sibling/child repo is judged by THAT repo's budget and protected
+# list. Commands with no identifiable target (e.g. `git reset --hard`) keep the session
+# repo. If git cannot be queried, fail open: tester/reviewer/commit-gate remain the
 # backstops, and non-repo directories have no production-risk budget.
+ctarget = _canon(target) if target else ""
+
+# ── PHASE A: PROTECTION — must evaluate to completion INDEPENDENT of usage computation.
+# Enclosing-repo discovery, config load and glob matching need a git work tree but NOT HEAD;
+# a freshly `git init`-ed repo with no commit yet is a valid work tree. Keeping protection in
+# its own try-block (separate from PHASE B's `current_usage`, which runs `git diff HEAD` and
+# RAISES on a HEAD-less repo) is the spine invariant: a repo-state exception in usage must not
+# skip the protected union. Mirrors the edit guard's ordering, where the strictly-outer union
+# runs and can exit 2 before any HEAD-dependent work. If THIS block itself throws for
+# git-unavailable reasons, the fail-open posture is preserved (tester/commit-gate backstop).
+max_lines, max_files, protected = 50, 2, []
+repo = ""
 try:
-    repo = os.path.realpath(git(os.path.realpath(_proj), "rev-parse", "--show-toplevel").decode().strip())
+    if ctarget:
+        repo = target_repo(ctarget)
+        # Enclosing-repo chain for the PROTECTED union (innermost → outermost). When the
+        # target is in no repo, the chain is empty and only the session fallback below runs.
+        repo_chain = enclosing_repos(ctarget)
+    else:
+        repo = os.path.realpath(git(os.path.realpath(_proj), "rev-parse", "--show-toplevel").decode().strip())
+        repo_chain = (repo,)
+    # Confirm the resolved root really is a git work tree before gating on it (HEAD-agnostic).
+    git(repo, "rev-parse", "--show-toplevel")
+    if not repo_chain:
+        repo_chain = (repo,)
+    # Budget/protected config stays anchored to the innermost (target) repo — round-1 behaviour.
     max_lines, max_files, protected = load_config(repo)
+
+    # PROTECTED is a UNION OF GATES across the enclosing chain, but exemptions never flow
+    # ACROSS repo boundaries. Ordering encodes that:
+    #   (1) STRICTLY-OUTER repos' protected lists are checked FIRST — an inner repo's
+    #       maestro-direct or permissive config can never bypass an outer repo's PROTECTED.
+    #   (2) THEN the GOVERNING repo's own direct-mode carve-out applies — a founder who put THIS
+    #       repo in direct mode wants direct mutations to it, even on its own protected paths
+    #       (round-1 per-repo carve-out, single-repo case). `repo` is the TARGET repo for a real
+    #       target, or the SESSION repo on the no-target fallback (e.g. `git reset --hard`) — so
+    #       this one check honors the marker per target AND on the session fallback, replacing the
+    #       removed session early-exit without ever exempting another repo's files cross-session.
+    #   (3) THEN the innermost repo's own protected list. Each repo's globs are evaluated
+    #       against the target's path RELATIVE TO THAT repo's own root.
+    # Size is irrelevant on protected paths, so logs record 0/0 usage here (usage may not yet
+    # be known, and is genuinely unknowable for a HEAD-less repo) — matches the edit guard.
+    if target:
+        for _r in repo_chain[1:]:                      # (1) strictly-outer repos
+            if any(glob_match(_r, p, ctarget) for p in load_config(_r)[2]):
+                write_log(_r, ctarget, "protected", 0, 0)
+                short_block("BLOCKED: protected path. Size does not matter on protected paths; run maestro for this task.\n")
+    if os.path.exists(os.path.join(repo, ".claude", "maestro-direct")):  # (2) inner direct-mode
+        allow()
+    if target:                                         # (3) innermost repo's own protected
+        if any(glob_match(repo, p, ctarget) for p in protected):
+            write_log(repo, ctarget, "protected", 0, 0)
+            short_block("BLOCKED: protected path. Size does not matter on protected paths; run maestro for this task.\n")
+except Exception:
+    # Protection could not be evaluated for git-unavailable reasons → fail open (unchanged
+    # posture). A HEAD-less repo does NOT land here: nothing above queries HEAD.
+    allow()
+
+# ── PHASE B: BUDGET — usage requires HEAD (`git diff HEAD`). If it cannot be computed (e.g.
+# a HEAD-less repo with no commit yet), budget is genuinely unknowable → fail open. Protection
+# (PHASE A) has already run to completion by this point, so this fail-open NEVER under-blocks a
+# protected path. Anchored to the innermost (target) repo — round-1 behaviour.
+try:
     cur_lines, changed_files = current_usage(repo)
 except Exception:
     allow()
-
-if target:
-    ctarget = _canon(target)
-    if any(glob_match(repo, p, ctarget) for p in protected):
-        write_log(repo, ctarget, "protected", cur_lines, len(changed_files))
-        short_block("BLOCKED: protected path. Size does not matter on protected paths; run maestro for this task.\n")
 
 used_lines = cur_lines
 used_files = len(changed_files)

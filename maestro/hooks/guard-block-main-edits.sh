@@ -31,11 +31,14 @@ if [ -n "$agent_id" ]; then
   exit 0
 fi
 
-# Engagement OFF for this repo → allow direct edits (the founder chose direct-edit mode).
+# Direct-edit mode is a per-TARGET-repo property, resolved per target below — NEVER a session
+# early-exit. A session-anchored marker check here would let a CTO session in repo A (direct mode)
+# edit repo B's PROTECTED files before B's gate ever runs (exemptions must never union outward
+# across a repo boundary). The session repo's marker still applies exactly where the session repo
+# IS the governing repo: same-repo edits (the common case — resolution finds the session repo as
+# the target's repo and honors its marker at _anchor:227) and the no-target fallback (handled at
+# the fallback-marker check below). proj is the session root, used only as the fallback anchor.
 proj="${CLAUDE_PROJECT_DIR:-$PWD}"
-if [ -f "$proj/.claude/maestro-direct" ] || [ -f ".claude/maestro-direct" ]; then
-  exit 0
-fi
 
 # Extract file_path; canonicalization (with realpath) happens below before any carve-out check.
 # SECURITY: do NOT apply the .claude/maestro carve-out on the raw path — an unanchored
@@ -66,12 +69,172 @@ fi
 # Fall back to original path if canonicalization fails (fail-open).
 _check_path="${_canon_path:-$file_path}"
 
+# Resolve the governing repo from the TARGET FILE, not the session dir. A CTO session
+# in a parent folder (or spanning two sibling repos) must govern each edit by ITS OWN
+# repo's budget, protected paths, and carve-outs. The anchor moves as ONE piece: every
+# carve-out below (.claude/maestro*, docs/, scratch) AND the python budget/protected
+# lookup all key off this same root. Session proj is only the fallback when no target
+# resolves (empty/unparseable file_path) — preserving today's behavior for those cases.
+#
+# git -C <nonexistent-dir> fails, and a Write can target a brand-new file in a
+# brand-new directory, so we walk the target's dirname up to the nearest EXISTING
+# ancestor before querying git (probe-verified). Fail-open to session proj on any miss.
+_anchor=""
+if [ -n "$_check_path" ] && command -v python3 >/dev/null 2>&1; then
+  _anchor_dir="$(python3 -c '
+import os, sys
+d = os.path.dirname(os.path.realpath(sys.argv[1])) or "/"
+while d and d != "/" and not os.path.isdir(d):
+    d = os.path.dirname(d)
+print(d)
+' "$_check_path" 2>/dev/null || true)"
+  if [ -n "$_anchor_dir" ] && [ -d "$_anchor_dir" ]; then
+    _anchor="$(git -C "$_anchor_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+    [ -n "$_anchor" ] && _anchor="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$_anchor" 2>/dev/null || echo "$_anchor")"
+  fi
+fi
+
 # Harness state writes are maestro's own bookkeeping → allow.
-# SECURITY: compare against CANONICAL paths anchored to the real repo root so that
-# traversal paths (.claude/maestro/../../hooks/...) and unrelated paths that contain
+# SECURITY: compare against CANONICAL paths anchored to the TARGET's real repo root so
+# that traversal paths (.claude/maestro/../../hooks/...) and unrelated paths that contain
 # the substring (skills/.claude/maestro-evil.ts, .claude/maestroX/anything) are NOT
-# incorrectly classified as harness state.
-_canon_proj="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$proj" 2>/dev/null || echo "$proj")"
+# incorrectly classified as harness state. Falls back to the session proj when the target
+# is outside any repo / unresolvable, so non-repo scratch carve-outs still work.
+_session_proj="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$proj" 2>/dev/null || echo "$proj")"
+_canon_proj="${_anchor:-$_session_proj}"
+
+# UNION-OF-GATES protected check across STRICTLY OUTER enclosing repos, BEFORE any carve-out
+# or direct-mode exemption. A repo nested inside a protected subtree of an outer repo (vendored
+# dep with its own .git, accidental `git init`, fixture repo under src/) resolves only to the
+# inner root via _anchor — which carries none of the outer repo's PROTECTED config. If ANY
+# enclosing repo OUTSIDE the innermost protects the target by THAT repo's own relative path,
+# BLOCK here. The innermost repo's own protected list is still enforced by the main gate below
+# (with accurate usage in its log), so this only adds the missing outer-repo gate. Exemptions
+# never union outward: running first means an inner docs/ or maestro-direct carve-out cannot
+# defeat an outer repo's protection. git-unavailable / not-a-repo → no outer chain → falls
+# through to the normal carve-outs + single-repo gate below (fail-open preserved).
+if [ -n "$_anchor" ] && command -v python3 >/dev/null 2>&1; then
+  set +e
+  _outer_repo="$(python3 - "$_check_path" "$_anchor" <<'PY'
+import fnmatch, os, subprocess, sys
+
+target = os.path.realpath(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] else ""
+inner = os.path.realpath(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else ""
+if not target or not inner:
+    sys.exit(0)
+
+
+def git_toplevel(d):
+    try:
+        return os.path.realpath(subprocess.check_output(
+            ["git", "-C", d, "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL).decode().strip())
+    except Exception:
+        return ""
+
+
+def outer_repos(start):
+    """Enclosing repo roots STRICTLY outside `start`, innermost → outermost (start excluded)."""
+    chain, seen, cur = [], {start}, start
+    while True:
+        parent = os.path.dirname(cur)
+        if not parent or parent == cur:
+            break
+        outer = git_toplevel(parent)
+        if not outer or outer in seen:
+            break
+        seen.add(outer); chain.append(outer); cur = outer
+    return chain
+
+
+def load_protected(repo):
+    out = []
+    try:
+        with open(os.path.join(repo, ".claude", "maestro-budget"), encoding="utf-8") as f:
+            for raw in f:
+                raw = raw.strip()
+                if not raw or raw.startswith("#") or "=" not in raw:
+                    continue
+                k, v = raw.split("=", 1)
+                if k.strip().upper() == "PROTECTED":
+                    out = [p for p in v.strip().split(":") if p]
+    except FileNotFoundError:
+        pass
+    except Exception:
+        return []
+    return out
+
+
+def rel_for(repo, path):
+    try:
+        return os.path.relpath(os.path.realpath(path), repo).replace(os.sep, "/")
+    except Exception:
+        return path.replace(os.sep, "/")
+
+
+def match_segments(psegs, ssegs):
+    if not psegs:
+        return not ssegs
+    head = psegs[0]
+    if head == "**":
+        return match_segments(psegs[1:], ssegs) or (bool(ssegs) and match_segments(psegs, ssegs[1:]))
+    return bool(ssegs) and fnmatch.fnmatchcase(ssegs[0], head) and match_segments(psegs[1:], ssegs[1:])
+
+
+def glob_match(repo, pattern, abs_path):
+    pat = pattern.strip().replace("\\", "/")
+    if not pat:
+        return False
+    if os.path.isabs(pat):
+        subject = os.path.realpath(abs_path).lstrip(os.sep).replace(os.sep, "/")
+        pat = os.path.realpath(pat).lstrip(os.sep).replace(os.sep, "/")
+    else:
+        subject = rel_for(repo, abs_path)
+    return match_segments([p for p in pat.split("/") if p], [p for p in subject.split("/") if p])
+
+
+for repo in outer_repos(inner):
+    if any(glob_match(repo, p, target) for p in load_protected(repo)):
+        print(repo)
+        sys.exit(0)
+sys.exit(0)
+PY
+)"
+  set -e
+  if [ -n "$_outer_repo" ]; then
+    # Log against the innermost repo (its .claude is the one nearest the target). Size is
+    # irrelevant on protected paths, so 0/0 usage in the log is honest here.
+    python3 - "$_check_path" "$_anchor" <<'PYLOG' 2>/dev/null || true
+import datetime, json, os, sys
+target, repo = os.path.realpath(sys.argv[1]), os.path.realpath(sys.argv[2])
+try:
+    d = os.path.join(repo, ".claude", "maestro")
+    os.makedirs(d, exist_ok=True)
+    rec = {"ts": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+           "hook": "guard-block-main-edits", "target": target,
+           "lines_used": 0, "files_used": 0, "reason": "protected"}
+    with open(os.path.join(d, "guard-log.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+except Exception:
+    pass
+PYLOG
+    echo "BLOCKED: protected path. Size does not matter on protected paths; run maestro for this task." >&2
+    exit 2
+  fi
+fi
+
+# Direct-edit mode is a per-TARGET-repo carve-out. A founder who put repoB in direct mode wants
+# direct edits to repoB files even from a parent session. Runs AFTER the protected union so an
+# inner direct-mode marker cannot defeat outer protection (exemptions never union outward).
+#   - Target resolved (_anchor set): honor the TARGET repo's marker — same-repo edits land here
+#     too, since the target's repo IS the session repo and its marker is the session's.
+#   - No target resolved (_anchor empty: empty/unparseable file_path): the session repo governs
+#     (_canon_proj fell back to it), so honor the SESSION repo's marker on this fallback path.
+if [ -n "$_anchor" ]; then
+  if [ -f "$_anchor/.claude/maestro-direct" ]; then exit 0; fi
+elif [ -f "$_canon_proj/.claude/maestro-direct" ]; then
+  exit 0
+fi
 _maestro_json="${_canon_proj}/.claude/maestro.json"
 _maestro_verify="${_canon_proj}/.claude/maestro-verify"
 _maestro_direct_file="${_canon_proj}/.claude/maestro-direct"
@@ -288,12 +451,6 @@ def current_usage():
         lines += line_count_file(os.path.join(repo, rel))
     return lines, changed
 
-try:
-    cur_lines, changed_files = current_usage()
-except Exception:
-    sys.exit(0)
-
-
 def write_log(reason, lines_used, files_used):
     try:
         log_dir = os.path.join(repo, ".claude", "maestro")
@@ -311,10 +468,23 @@ def write_log(reason, lines_used, files_used):
     except Exception:
         pass
 
+
+# PROTECTED (innermost repo's own list) must evaluate to completion INDEPENDENT of usage —
+# is_protected needs only the work tree + config + glob, never HEAD. Running it BEFORE
+# current_usage (which queries `git diff HEAD` and RAISES on a HEAD-less repo with no commit
+# yet) is the spine invariant: a repo-state exception in usage must not skip protection. This
+# mirrors the strictly-outer union above (which already runs before any HEAD query) and the
+# bash guard's ordering. Size is irrelevant on protected paths → log 0/0, as the outer union
+# does. Budget (below) still fails open when usage is unknowable; protection never does.
 if target and is_protected(target):
-    write_log("protected", cur_lines, len(changed_files))
+    write_log("protected", 0, 0)
     sys.stderr.write("BLOCKED: protected path. Size does not matter on protected paths; run maestro for this task.\n")
     sys.exit(2)
+
+try:
+    cur_lines, changed_files = current_usage()
+except Exception:
+    sys.exit(0)
 
 
 def count_text(s):

@@ -68,6 +68,73 @@ watch every step.
 - Skill loop sequencing is **model-driven** → near-100%. The **Workflow** loop is **process-100%**
   (deterministic JS). Hooks make the *outcomes* hard (no self-edit, no broken ship) regardless.
 
+### Which repo governs an action: the five-hook anchor story
+
+Each hook resolves "which repo am I governing?" from the **target of the action**, not the session
+directory, so every repo is governed by ITS OWN budget, protected paths, carve-outs and ledger.
+
+- **Target-rooted** (derive the repo from what the action touches):
+  - `guard-block-main-edits.sh` → the edited file's repo (`git rev-parse --show-toplevel` from the
+    file's nearest existing ancestor dir; a Write may create new dirs).
+  - `guard-block-main-bash.sh` → the mutated path's repo (same resolution, per detected target).
+  - `commit-gate.sh` → the commit's repo (the `git commit` segment's effective `cd`/`-C` context;
+    the **last** `-C` wins, matching real git; unspaced operators like `cd r&&git commit` are
+    pre-split before tokenizing). `cd`/`-C` path tokens are run through `os.path.expanduser` so a
+    cross-repo commit written `cd ~/hq && git commit` routes to its real repo under `$HOME`; the
+    boundary is deliberate — `~`/`~user` expand, but `$HOME`/`$VAR` forms stay literal (unresolvable
+    → session fallback → over-block, the safe direction). **Engagement is a three-state decision so
+    safety never depends on any enumeration** — prior evasions all came from the gate failing to
+    *engage* because the parser
+    did not recognize one more wrapper/prefix, and an enumeration can always lose that race:
+      1. **TRIGGER (dumb, over-inclusive, unbeatable):** the gate engages when the raw command
+         contains the `git commit` substring (the original baseline matcher) **or** any token whose
+         basename is `git` is followed by a `commit` token in the same segment. No stripping, no
+         understanding — just a trigger.
+      2. **ROUTE (precise where possible):** once engaged, the clean parser (strip `VAR=val`,
+         wrappers `env`/`command`/`nice`/`nohup`/`timeout <n>`/`xargs`/`sudo`/`exec`/`time -p`, then
+         basename-match `git` and skip global options) classifies each git segment. A segment that
+         cleanly parses as `git commit` is gated by its resolved target repo. **The wrapper list is
+         routing precision, not the safety boundary** — a missed wrapper degrades to over-block,
+         never under-block.
+      3. **FALLBACK (the net that makes enumeration irrelevant):** engaged but no segment cleanly
+         parses as a commit → still gate, and the resolver returns the **session repo** (over-block).
+         This catches `time -p git commit`, `sudo time git commit`, and tomorrow's unknown wrapper.
+    Three outcomes: a clean commit segment → gate by target; every git segment cleanly classified as
+    a *non*-commit verb with no `git commit` substring (`git log --grep commit`, `git -C r
+    commit-tree`) → exit 0; anything else → session gate. **Accepted over-blocks (baseline parity):**
+    `echo git commit` and a `-m` message arg whose raw text contains `git commit` engage and fall
+    back to session gating — the old substring matcher blocked these too; de-blocking them was the
+    nicety that opened the enumeration hole class. Out of scope (a baseline limitation, not closed
+    here): commits hidden inside opaque carriers — `bash file.sh`, `python -c "..."`, `eval "$x"` —
+    which the substring matcher never inspected either.
+- **Session-rooted** (no per-action target → anchor on `CLAUDE_PROJECT_DIR or PWD`): `stop-dod.sh`,
+  `maestro-engage.sh`, `crew-context.sh`. (Whether the session anchor resolves to a worktree vs the
+  main checkout is the open question the lanes work, task 2b, answers with a live session.)
+
+**Nested repos — union of gates, never union of exemptions.** A git repo nested inside a protected
+subtree of an outer repo (vendored dep with its own `.git`, accidental `git init`, fixture repo
+under `src/`) resolves only to the **inner** root — which carries none of the outer repo's PROTECTED
+config. The guards close this by walking the **enclosing-repo chain** (innermost → outermost, bounded
+by the filesystem root):
+
+- The **PROTECTED check is a union**: if ANY enclosing repo's protected list matches the target by
+  THAT repo's own relative path, BLOCK.
+- **Exemptions never flow across a repo boundary**: an inner repo's carve-outs (`docs/`,
+  `.claude/maestro*` ledger, `.md` prose) or `maestro-direct` must NOT defeat an outer repo's
+  PROTECTED — the outer-protection check runs before those exemptions apply. Within a *single* repo,
+  that repo's own `maestro-direct` still exempts its own protected paths (round-1 per-repo carve-out).
+- **`maestro-direct` is a per-repo property resolved per TARGET, never per session**: the guards
+  carry no session-anchored direct-mode early-exit — a session in repo A (direct mode) cannot edit
+  or shell-write repo B's PROTECTED files (that would union the exemption outward). The session
+  repo's marker applies exactly where the session repo IS the governing repo: same-repo actions
+  (the target resolves to the session repo, the common case) and the no-target fallback (`git reset
+  --hard`, an empty `file_path` → the session repo governs and its own marker is honored).
+- **Budget accounting stays anchored to the innermost (target) repo** — usage is computed against
+  that repo's HEAD. Invariant on the safety spine: every failure/ambiguity over-blocks, never
+  under-blocks; fail-open is reserved for "git unavailable / not a repo at all". `commit-gate` needs
+  no nesting fix — committing in an inner repo is a commit to THAT repo, governed by its own
+  ledger/verify; an inner commit cannot smuggle changes into an outer repo's history.
+
 ## Crew management (matches pi)
 
 Verified: pi foreman does NOT live-supervise the developer — it dispatches, the developer runs to
