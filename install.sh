@@ -7,7 +7,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 DEST="${1:+$1/.claude}"; DEST="${DEST:-$HOME/.claude}"
-mkdir -p "$DEST/agents" "$DEST/hooks" "$DEST/skills"
+mkdir -p "$DEST/agents" "$DEST/hooks" "$DEST/skills" "$DEST/rules"
 chmod +x "$ROOT"/maestro/hooks/*.sh "$ROOT"/maestro/scripts/*.sh "$ROOT"/hq/bootstrap.sh
 
 for f in "$ROOT"/maestro/crew/*.md;  do ln -sfn "$f" "$DEST/agents/$(basename "$f")"; done
@@ -32,6 +32,10 @@ else
   link_doc "$ROOT/AGENTS.md" "$DEST/AGENTS.md"
   link_doc "$ROOT/CLAUDE.md" "$DEST/CLAUDE.md"
 fi
+
+# Global engineering rules ride along like the contract docs — never clobber a
+# rules file the user wrote themselves.
+for f in "$ROOT"/rules/*.md; do link_doc "$f" "$DEST/rules/$(basename "$f")"; done
 
 echo "Installed maestro crew+hooks+skill into: $DEST"
 echo "  crew: $(ls "$ROOT/maestro/crew" | tr '\n' ' ')"

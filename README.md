@@ -188,6 +188,7 @@ maestro/                  the harness domain — everything that runs
   scripts/                  the ledger + HQ toolbox: task-init/verify/record/status/report · queue-add · team-board
   charter/                  gate pipeline · Definition of Done
 hq/                       office deployment kit — chief-of-staff template + bootstrap (a live HQ is your own private repo)
+rules/                    global engineering rules — deployed to .claude/rules alongside the contract
 tests/                    black-box suite for every script and hook — also the repo's verify command
 docs/                     architecture + decision log
 AGENTS.md                 project map + CTO operating contract (single source of truth)
