@@ -13,7 +13,18 @@ _src="${BASH_SOURCE[0]}"; while [ -L "$_src" ]; do _src="$(readlink "$_src")"; d
 
 [ -z "$input" ] && exit 0
 
-MAESTRO_HOOK_INPUT="$input" python3 - <<'PY'
+# Resolve the company-slot HQ root the same way team-board.sh / the engage nudge do:
+# $MAESTRO_HQ env var, else the path in the ~/.claude/maestro-hq pointer file. The
+# personal slot defaults to ~/.claude/me.md, overridable via $MAESTRO_ME (test seam).
+# Both feed the python block below so the crew get the same two identity layers the
+# main session gets. Fail-silent: a missing pointer just leaves $hq empty.
+hq="${MAESTRO_HQ:-}"
+if [ -z "$hq" ] && [ -f "$HOME/.claude/maestro-hq" ]; then
+  hq="$(cat "$HOME/.claude/maestro-hq" 2>/dev/null || true)"
+fi
+
+MAESTRO_HOOK_INPUT="$input" MAESTRO_SLOT_HQ="$hq" \
+MAESTRO_SLOT_ME="${MAESTRO_ME:-$HOME/.claude/me.md}" python3 - <<'PY'
 import json, os, sys
 
 CREW = {"developer", "ui-developer", "tester", "reviewer", "planner", "scout"}
@@ -80,6 +91,31 @@ elif role == "reviewer":
 if role in ("planner", "scout") and os.path.exists(os.path.join(mdir, "knowledge.md")):
     lines.append("Blind-mode knowledge file exists: .claude/maestro/knowledge.md — read it FIRST "
                  "(date-stamped hints from past tickets; re-verify before relying).")
+
+# Context slots — the same two identity layers the main session gets (engage hook):
+# company conventions ($HQ/knowledge/conventions.md) then the human (~/.claude/me.md,
+# $MAESTRO_ME seam). Reading order is framework (CLAUDE.md) → company → person. Each:
+# exists + readable + non-blank → header + first 60 lines (cap so a runaway file can't
+# tax every subagent). Fail-silent per slot — any error appends nothing for that slot.
+def slot(path, header):
+    if not path:
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return  # missing, unreadable, or non-UTF-8 → silent for this slot
+    if not text.strip():
+        return
+    body = text.splitlines()
+    block = [header] + body[:60]
+    if len(body) > 60:
+        block.append("[maestro] (...truncated — keep this file under 60 lines)")
+    lines.append("\n".join(block))
+
+hq = (os.environ.get("MAESTRO_SLOT_HQ") or "").strip()
+slot(os.path.join(hq, "knowledge", "conventions.md") if hq else "", "[maestro] Company conventions:")
+slot((os.environ.get("MAESTRO_SLOT_ME") or "").strip(), "[maestro] About the human:")
 
 print(json.dumps({
     "hookSpecificOutput": {

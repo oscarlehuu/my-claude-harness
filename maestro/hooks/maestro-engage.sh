@@ -119,4 +119,46 @@ PY
   fi
 } 2>/dev/null || true
 
+# Context slots — the two identity layers a static file can't carry. AGENTS.md (the
+# framework's law) already loads via CLAUDE.md; these add, in reading order:
+#   1. company slot — how THIS company works: $HQ/knowledge/conventions.md (HQ resolved
+#      like team-board.sh: $MAESTRO_HQ, else the ~/.claude/maestro-hq pointer file).
+#   2. personal slot — who the human at this machine is: ~/.claude/me.md ($MAESTRO_ME seam).
+# Each: exists + readable + non-blank → header + the first 60 lines (a runaway file must
+# not tax every session); whether the source files exist is the user's business. Strictly
+# read-only and fail-silent like the nudges above — any error prints nothing for that slot.
+{
+  hq="${MAESTRO_HQ:-}"
+  if [ -z "$hq" ] && [ -f "$HOME/.claude/maestro-hq" ]; then
+    hq="$(cat "$HOME/.claude/maestro-hq" 2>/dev/null || true)"
+  fi
+  MAESTRO_SLOT_HQ="$hq" MAESTRO_SLOT_ME="${MAESTRO_ME:-$HOME/.claude/me.md}" python3 - <<'PY' 2>/dev/null || true
+import os
+
+CAP = 60
+
+def emit(path, header):
+    if not path:
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return  # missing, unreadable, or non-UTF-8 → silent for this slot
+    if not text.strip():
+        return  # blank/whitespace-only → nothing to say
+    lines = text.splitlines()
+    print(header)
+    for line in lines[:CAP]:
+        print(line)
+    if len(lines) > CAP:
+        print("[maestro] (...truncated — keep this file under 60 lines)")
+
+hq = (os.environ.get("MAESTRO_SLOT_HQ") or "").strip()
+conventions = os.path.join(hq, "knowledge", "conventions.md") if hq else ""
+emit(conventions, "[maestro] Company conventions:")
+emit((os.environ.get("MAESTRO_SLOT_ME") or "").strip(), "[maestro] About the human:")
+PY
+} 2>/dev/null || true
+
 exit 0

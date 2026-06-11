@@ -79,7 +79,10 @@ The CTO records, scripts write, hooks enforce — full protocol in `maestro/SKIL
   silence the nudge with `touch .claude/maestro/registry-nudge-off`.
 - Hooks: the guards budget-gate main-session edits (crew subagents carry `agent_id` and pass);
   `commit-gate` checks the active task's tier DoD from the ledger AND re-runs the verify command on
-  `git commit`; `stop-dod` blocks ending a turn with code changed after the last green verify.
+  `git commit`; `stop-dod` blocks ending a turn with code changed after the last green verify. The
+  context hooks (`maestro-engage`, `crew-context`) also load two optional identity slots at fire
+  time — company conventions (`$HQ/knowledge/conventions.md`) then the human (`~/.claude/me.md`,
+  `$MAESTRO_ME` seam) — fail-silent, first 60 lines, company before personal.
 
 ## Engagement (per repo)
 

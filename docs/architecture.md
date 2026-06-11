@@ -111,6 +111,27 @@ directory, so every repo is governed by ITS OWN budget, protected paths, carve-o
   `maestro-engage.sh`, `crew-context.sh`. (Whether the session anchor resolves to a worktree vs the
   main checkout is the open question the lanes work, task 2b, answers with a live session.)
 
+### Context slots: the three identity layers
+
+Identity arrives in three layers, in reading order. **Framework** (`AGENTS.md`, the harness's law) is
+already loaded by Claude Code via the `CLAUDE.md` `@AGENTS.md` import. On top of that the two
+context hooks load two optional **slots** at fire time — `maestro-engage.sh` for the main session
+(SessionStart: startup/resume/clear/compact) and `crew-context.sh` for every crew subagent
+(SubagentStart), so main and crew see the same context:
+
+- **Company slot** — *how this company works.* The HQ root resolves exactly like `team-board.sh`
+  (`$MAESTRO_HQ`, else the `~/.claude/maestro-hq` pointer file); the target is
+  `$HQ/knowledge/conventions.md`, printed under `[maestro] Company conventions:`.
+- **Personal slot** — *who the human at this machine is.* Target `~/.claude/me.md`, overridable via
+  the `$MAESTRO_ME` test seam, printed under `[maestro] About the human:`.
+
+The hooks define only the slots, not the source files (the CTO and founder author those). Each slot
+loads only if its file exists, is readable, and is non-blank; at most the first 60 lines print
+(plus one truncation notice) so a runaway file can't tax every session and subagent. Company prints
+before personal. Everything is read-only and fail-silent — a missing pointer, dead HQ path,
+unreadable or non-UTF-8 file prints nothing for that slot and never breaks the hook (always exit 0),
+mirroring the registry/staleness nudges.
+
 **Nested repos — union of gates, never union of exemptions.** A git repo nested inside a protected
 subtree of an outer repo (vendored dep with its own `.git`, accidental `git init`, fixture repo
 under `src/`) resolves only to the **inner** root — which carries none of the outer repo's PROTECTED
