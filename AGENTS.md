@@ -27,7 +27,7 @@ maestro/             the harness domain — everything that runs
   SKILL.md             the operative protocol (/maestro): tier playbooks, blind mode
   crew/                the team: planner · scout · developer · ui-developer · tester · reviewer
   hooks/               guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
-  scripts/             task-init · task-verify · task-record · task-status · task-report · queue-add · team-board
+  scripts/             task-init · task-verify · task-record · task-status · task-report · queue-add · team-board · registry-add
   charter/             gate-pipeline.md · definition-of-done.md
 hq/                  the office deployment kit — templates/AGENTS.md · bootstrap.sh (a live HQ is a separate private repo)
 tests/               black-box suite for every script and hook (also the repo verify command)
@@ -70,6 +70,9 @@ The CTO records, scripts write, hooks enforce — full protocol in `maestro/SKIL
 - `task-report.sh` — measure tiers/rounds/verify-time/guard friction from real usage.
 - `queue-add.sh` / `team-board.sh` — the HQ layer: drop tasks into the founder's queue; render the
   cross-repo standup board (HQ path from `~/.claude/maestro-hq`).
+- `registry-add.sh [<path>] [--name <n>]` — register a repo onto the company board (writes HQ
+  `registry.json`, no git). The `maestro-engage` hook nudges when the current repo isn't on it;
+  silence the nudge with `touch .claude/maestro/registry-nudge-off`.
 - Hooks: the guards budget-gate main-session edits (crew subagents carry `agent_id` and pass);
   `commit-gate` checks the active task's tier DoD from the ledger AND re-runs the verify command on
   `git commit`; `stop-dod` blocks ending a turn with code changed after the last green verify.

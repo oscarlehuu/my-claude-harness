@@ -46,4 +46,42 @@ PY
 else
   echo "[maestro] No open maestro task in this repo."
 fi
+
+# Registry nudge — "machine proposes, founder nods, CTO writes the line." If this
+# repo is a git work tree that the HQ board isn't watching yet, suggest adding it.
+# Strictly read-only and fail-silent: any error here must not break the hook.
+{
+  hq="${MAESTRO_HQ:-}"
+  if [ -z "$hq" ] && [ -f "$HOME/.claude/maestro-hq" ]; then
+    hq="$(cat "$HOME/.claude/maestro-hq" 2>/dev/null || true)"
+  fi
+  top="$(git -C "$proj" rev-parse --show-toplevel 2>/dev/null || true)"
+  # Only when: HQ exists, $proj is in a git tree, and no dismiss marker.
+  if [ -n "$hq" ] && [ -d "$hq" ] && [ -n "$top" ] && [ ! -e "$proj/.claude/maestro/registry-nudge-off" ]; then
+    MAESTRO_N_HQ="$hq" MAESTRO_N_TOP="$top" python3 - <<'PY' 2>/dev/null || true
+import json, os, sys
+
+hq = os.environ["MAESTRO_N_HQ"]
+top = os.path.realpath(os.environ["MAESTRO_N_TOP"])
+
+# Don't nudge the HQ about itself.
+if top == os.path.realpath(hq):
+    sys.exit(0)
+
+try:
+    with open(os.path.join(hq, "registry.json"), encoding="utf-8") as f:
+        repos = json.load(f).get("repos", [])
+except Exception:
+    repos = []
+
+for entry in repos:
+    if os.path.realpath(os.path.expanduser(entry.get("path", ""))) == top:
+        sys.exit(0)  # already on the board
+
+print("[maestro] This repo is not on the company board (HQ registry). To add it: "
+      "maestro/scripts/registry-add.sh — to silence this: touch .claude/maestro/registry-nudge-off")
+PY
+  fi
+} 2>/dev/null || true
+
 exit 0

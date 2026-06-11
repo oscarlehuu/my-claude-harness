@@ -31,6 +31,12 @@ printf '%s' "$PWD" > ~/.claude/maestro-hq          # the pointer — scripts fin
 Or, on a machine that already has the harness installed: clone your existing HQ and run
 `./bootstrap.sh` inside it (writes the pointer, validates the registry).
 
+## Add a repo to the board
+
+From inside the repo you want watched, run `registry-add.sh` (defaults to the git toplevel and
+its basename), then commit HQ. The SessionStart hook also nudges when you open an unregistered
+repo. Paths under `$HOME` are stored `~`-prefixed for portability.
+
 ## Portability
 
 HQ moves with git: give it a **private** remote, and never put secrets in journal/knowledge.

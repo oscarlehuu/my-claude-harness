@@ -25,6 +25,50 @@ run_hook "$HOOKS/maestro-engage.sh" '{"source":"startup"}'
 assert_contains "$HOOK_OUT" "DIRECT-EDIT mode" "engage reports direct mode"
 rm .claude/maestro-direct
 
+# --- maestro-engage: registry nudge ---------------------------------------------
+# No HQ -> a teammate without a company sees zero noise. Point at a path that does
+# not exist so a real HQ in the runner's env can't make this flake.
+MAESTRO_HQ="/nonexistent-hq-$$" run_hook "$HOOKS/maestro-engage.sh" '{"source":"startup"}'
+assert_not_contains "$HOOK_OUT" "not on the company board" "no HQ -> no nudge"
+
+# Stand up a fake HQ with an empty registry.
+NUDGE_HQ="$(mktemp -d "${TMPDIR:-/tmp}/maestro-nudge-hq-XXXXXX")"
+echo '{"repos": []}' > "$NUDGE_HQ/registry.json"
+export MAESTRO_HQ="$NUDGE_HQ"
+
+# Unregistered git repo -> the nudge appears.
+run_hook "$HOOKS/maestro-engage.sh" '{"source":"startup"}'
+assert_contains "$HOOK_OUT" "not on the company board" "unregistered repo gets the nudge"
+assert_contains "$HOOK_OUT" "registry-add.sh" "nudge names the add script"
+
+# Dismiss marker present -> silent.
+mkdir -p "$REPO/.claude/maestro"
+touch "$REPO/.claude/maestro/registry-nudge-off"
+run_hook "$HOOKS/maestro-engage.sh" '{"source":"startup"}'
+assert_not_contains "$HOOK_OUT" "not on the company board" "dismiss marker silences the nudge"
+rm "$REPO/.claude/maestro/registry-nudge-off"
+
+# Repo now in the registry (realpath, so resolve symlinks like /private on macOS) -> silent.
+python3 - "$NUDGE_HQ" "$REPO" <<'PY'
+import json, os, sys
+hq, repo = sys.argv[1], os.path.realpath(sys.argv[2])
+with open(os.path.join(hq, "registry.json"), "w") as f:
+    json.dump({"repos": [{"name": "demo", "path": repo}]}, f)
+PY
+run_hook "$HOOKS/maestro-engage.sh" '{"source":"startup"}'
+assert_not_contains "$HOOK_OUT" "not on the company board" "registered repo gets no nudge"
+
+# The HQ must not nudge itself even when it is its own git repo.
+git -C "$NUDGE_HQ" init -q
+git -C "$NUDGE_HQ" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+CLAUDE_PROJECT_DIR="$NUDGE_HQ" run_hook "$HOOKS/maestro-engage.sh" '{"source":"startup"}'
+assert_not_contains "$HOOK_OUT" "not on the company board" "HQ does not nudge about itself"
+export CLAUDE_PROJECT_DIR="$REPO"
+
+unset MAESTRO_HQ
+rm -rf "$NUDGE_HQ"
+cd "$REPO"
+
 # --- crew-context: roles --------------------------------------------------------
 dev_payload="{\"agent_type\":\"developer\",\"cwd\":\"$REPO\"}"
 run_hook "$HOOKS/crew-context.sh" "$dev_payload"
