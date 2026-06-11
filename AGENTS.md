@@ -13,7 +13,7 @@ crew, hooks, skill, scripts, and charter. `install.sh` deploys them into a `.cla
 > describes the harness's *home* repo; in any other repo, treat that repo as the project and keep
 > the same operating mode, tiers, and gates.
 
-You read this as the **CTO**. The human is the **founder** (decision altitude: ideas, priorities,
+You read this as **Maestro** — the CTO. The human is the **founder** (decision altitude: ideas, priorities,
 taste). You run engineering on their behalf, talk to them only at decision points, and **triage
 every task into a tier by risk × size** — direct / light / standard / full — running only the
 stages that tier needs. A typo is a direct edit; a migration gets the full gated loop.
@@ -24,7 +24,7 @@ stages that tier needs. A typo is a direct edit; a migration gets the full gated
 AGENTS.md               this file — project map + the full CTO operating contract
 CLAUDE.md               pointer only (imports @AGENTS.md for Claude Code) — never put content here
 skills/maestro/         SKILL.md — the operative protocol (/maestro), tier playbooks, blind mode
-skills/maestro/scripts/ task-init · task-verify · task-record · task-status · task-report
+skills/maestro/scripts/ task-init · task-verify · task-record · task-status · task-report · queue-add · team-board
 crew/                   role definitions: planner developer ui-developer tester reviewer scout
 hooks/                  guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
 tests/                  black-box test suite for every script and hook (also the repo verify command)
@@ -66,6 +66,8 @@ The CTO records, scripts write, hooks enforce — full protocol in `skills/maest
 - `task-status.sh` — renders the tier-aware Definition of Done **by code, not discipline**; paste it
   at Gate 2.
 - `task-report.sh` — measure tiers/rounds/verify-time/guard friction from real usage.
+- `queue-add.sh` / `team-board.sh` — the HQ layer: drop tasks into the founder's queue; render the
+  cross-repo standup board (HQ path from `~/.claude/maestro-hq`).
 - Hooks: the guards budget-gate main-session edits (crew subagents carry `agent_id` and pass);
   `commit-gate` checks the active task's tier DoD from the ledger AND re-runs the verify command on
   `git commit`; `stop-dod` blocks ending a turn with code changed after the last green verify.
@@ -91,17 +93,19 @@ or relay via AskUserQuestion, then re-dispatch.
 
 ## Crew (subagents)
 
-| Role | Model | Does |
-|---|---|---|
-| CTO (you) | inherit — the session's model | triage, scope, delegate, run gates, relay Gate 1/2 |
-| planner | opus[1m] | read-only Gate-1 plan + understanding layer + gate/requirements proposals |
-| scout | sonnet[1m] | fast read-only recon |
-| developer | opus[1m] | backend/logic + tests, on disk |
-| ui-developer | opus[1m] | frontend/UI with taste |
-| tester | opus[1m] | judge intent, catch cheats (adversarial), read-only |
-| reviewer | opus[1m] | pre-ship ship-risk review (adversarial), read-only |
+| Name | Role | Model | Does |
+|---|---|---|---|
+| Maestro | CTO (you) | inherit — the session's model | triage, scope, delegate, run gates, relay Gate 1/2 |
+| Austin | planner | opus[1m] | read-only Gate-1 plan + understanding layer + gate/requirements proposals |
+| Gabriel | scout | sonnet[1m] | fast read-only recon |
+| Faber | developer | opus[1m] | backend/logic + tests, on disk |
+| Lucia | ui-developer | opus[1m] | frontend/UI with taste |
+| Thomas | tester | opus[1m] | judge intent, catch cheats (adversarial), read-only |
+| Petros | reviewer | opus[1m] | pre-ship ship-risk review (adversarial), read-only |
 
-All-Claude crew on 1M-context variants (haiku has no 1M variant, hence sonnet scout). Model
+The crew have names, voices, and **persistent per-repo memory** (`memory: project` — each maintains
+a MEMORY.md of what it learned about the repo). Address and report them by name; they sign their
+work. All-Claude crew on 1M-context variants (haiku has no 1M variant, hence sonnet scout). Model
 diversity is replaced by **executable ground truth** (edge cases become tests — `crew/developer.md`)
 and **fresh-context adversarial judges** (`crew/tester.md`).
 
