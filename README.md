@@ -124,16 +124,26 @@ Prerequisites: [Claude Code](https://claude.com/claude-code), `jq`, `python3`.
 ```bash
 git clone https://github.com/oscarlehuu/my-claude-harness.git
 cd my-claude-harness
-./install.sh                 # symlink crew+hooks+skill+contract into ~/.claude (global)
+./install.sh                 # copy crew+hooks+skill+contract into ~/.claude (global)
 # or: ./install.sh /path/to/project   for a project-local install
 ```
 
-The install also links the operating contract — `AGENTS.md` (single source of truth) plus
-`CLAUDE.md` (a pointer that imports it) — so every session loads it; pre-existing non-symlink
-docs are left untouched. Then merge `settings.hooks.json` into your `~/.claude/settings.json`
-(for a global install, use absolute hook paths — `~/.claude/hooks/...`). Open a new Claude Code
-session anywhere: the contract + a SessionStart hook put it in CTO mode, and the first code task
-gets a one-line triage (`Tier: light — ...`) before anything runs.
+The install is a **copy deploy with provenance**, not a symlink: the repo is the PROJECT and the
+installed `.claude` is stable PRODUCTION, so a half-finished edit in the repo is never live
+machine-wide before a verdict. `install.sh` **refuses to deploy unless the source tree is clean and
+its test suite is green** (a dirty tree or red suite aborts with a non-zero exit), then stamps
+`$DEST/maestro-deployed.json` with the source path + deployed commit sha. The loop is: run stable
+production → edit the project → reinstall (only when clean + green) → repeat. **Rollback = re-run
+`install.sh` from a good commit** (no longer `git checkout` — the runtime is a copy, not a link back).
+
+The install also copies the operating contract — `AGENTS.md` (single source of truth) plus
+`CLAUDE.md` (a pointer that imports it) — so every session loads it; a pre-existing `AGENTS.md`/
+`CLAUDE.md`/rules file you wrote yourself (not one of our deployed copies) is left untouched with a
+NOTE. Then merge `settings.hooks.json` into your `~/.claude/settings.json` (for a global install, use
+absolute hook paths — `~/.claude/hooks/...`). Open a new Claude Code session anywhere: the contract +
+a SessionStart hook put it in CTO mode, and the first code task gets a one-line triage
+(`Tier: light — ...`) before anything runs. The SessionStart hook also nudges, one line, when the
+deployed runtime falls behind the harness repo — your cue to review and reinstall.
 
 Per-repo escape hatch: `echo 1 > .claude/maestro-direct` turns the guards off for that repo.
 Budget/protected-path config: `.claude/maestro-budget` (`LINES=50`, `FILES=2`,
@@ -146,10 +156,12 @@ company repos and there is nothing to deploy or operate centrally.
 
 ```bash
 git clone https://github.com/oscarlehuu/my-claude-harness.git && cd my-claude-harness
-./install.sh && bash tests/run-all.sh    # a green suite = the rails work on this machine
+./install.sh    # copy deploy — refuses unless the tree is clean and the suite is green
 ```
 
-then merge `settings.hooks.json` as in the Quickstart. What a team gains over N people each
+`install.sh` runs the suite itself as its trust gate, so a successful install *is* the green check —
+the rails are verified on this machine before anything is copied. then merge `settings.hooks.json` as
+in the Quickstart. What a team gains over N people each
 driving vanilla Claude Code their own way:
 
 - **One shared discipline, zero shared infra.** Every task gets the same triage → verify → gate
@@ -173,10 +185,11 @@ House rules that keep it tidy:
 - Optionally give each person an **HQ** — a small private repo with a queue, standup board, and
   per-repo knowledge across everything they work on: see [hq/README.md](hq/README.md).
 
-**Uninstalling is symmetric:** everything the installer creates is a symlink into `.claude/`
-(`agents/`, `hooks/`, `skills/maestro`, `AGENTS.md`, `CLAUDE.md`). Delete the symlinks and the
-hooks block from `settings.json`, and Claude Code is back to stock; repos keep only their plain-file
-ledgers, which you can delete or keep as history.
+**Uninstalling:** everything the installer copies is listed in the manifest inside
+`.claude/maestro-deployed.json` (`agents/`, `hooks/`, `skills/maestro`, `AGENTS.md`, `CLAUDE.md`,
+`rules/`). Delete those paths, the stamp, and the hooks block from `settings.json`, and Claude Code is
+back to stock; any `AGENTS.md`/`CLAUDE.md`/rules file you wrote yourself was never touched. Repos keep
+only their plain-file ledgers, which you can delete or keep as history.
 
 ## Layout
 
@@ -194,7 +207,7 @@ docs/                     architecture + decision log
 AGENTS.md                 project map + CTO operating contract (single source of truth)
 CLAUDE.md                 pointer only — imports @AGENTS.md for Claude Code
 settings.hooks.json       hooks block to merge into .claude/settings.json
-install.sh                idempotent symlink deploy (global or per-project)
+install.sh                copy deploy with provenance (clean+green only; writes a stamp; global or per-project)
 ```
 
 ## Where this came from (the short version)

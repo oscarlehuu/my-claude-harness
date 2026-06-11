@@ -12,6 +12,7 @@ suites=(
   "$ROOT/tests/hq-board.test.sh"
   "$ROOT/tests/registry-add.test.sh"
   "$ROOT/tests/guard.test.sh"
+  "$ROOT/tests/install.test.sh"
 )
 
 failed=0

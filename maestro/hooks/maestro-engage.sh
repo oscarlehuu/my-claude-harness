@@ -84,4 +84,39 @@ PY
   fi
 } 2>/dev/null || true
 
+# Staleness nudge — "production runtime is behind the harness repo". We read the stamp from
+# the runtime that is ACTUALLY executing this hook: the .claude dir two levels up from the
+# hook's own resolved path (when copy-deployed it lives at <.claude>/hooks/maestro-engage.sh),
+# falling back to ~/.claude when that can't be derived. If the stamp exists, its recorded
+# source repo still exists, and the source HEAD differs from the stamped sha -> one line.
+# Strictly read-only, fail-silent, one git rev-parse and only when the stamp is present.
+# MAESTRO_DEPLOYED_STAMP overrides the stamp path (test seam, mirrors MAESTRO_HQ above).
+{
+  stamp="${MAESTRO_DEPLOYED_STAMP:-}"
+  if [ -z "$stamp" ]; then
+    rt="$(cd "$(dirname "$_src")/.." 2>/dev/null && pwd || true)"
+    case "$rt" in */.claude) stamp="$rt/maestro-deployed.json" ;; *) stamp="$HOME/.claude/maestro-deployed.json" ;; esac
+  fi
+  if [ -f "$stamp" ]; then
+    MAESTRO_STALE_STAMP="$stamp" python3 - <<'PY' 2>/dev/null || true
+import json, os, subprocess, sys
+try:
+    s = json.load(open(os.environ["MAESTRO_STALE_STAMP"], encoding="utf-8"))
+    src, sha = s["source"], s["sha"]
+except Exception:
+    sys.exit(0)
+if not src or not sha or not os.path.isdir(src):
+    sys.exit(0)
+try:
+    head = subprocess.run(["git", "-C", src, "rev-parse", "HEAD"],
+                          capture_output=True, text=True, timeout=5).stdout.strip()
+except Exception:
+    sys.exit(0)
+if head and head != sha:
+    print(f"[maestro] Production runtime is behind the harness repo "
+          f"(deployed {sha[:7]}, repo at {head[:7]}) — review + re-run install.sh when ready.")
+PY
+  fi
+} 2>/dev/null || true
+
 exit 0

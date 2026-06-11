@@ -5,8 +5,11 @@
 
 **Maestro** is a tiered, gated orchestration harness for **Claude Code** — evolved from the pi
 `foreman` kernel. This repo (`my-claude-harness`) is its home project: the source of truth for the
-crew, hooks, skill, scripts, and charter. `install.sh` deploys them into a `.claude/` runtime
-(global `~/.claude` or a project's `.claude/`); the runtime is produced from here, it is not this repo.
+crew, hooks, skill, scripts, and charter. `install.sh` **copy-deploys** them into a `.claude/`
+runtime (global `~/.claude` or a project's `.claude/`) — only when the source tree is clean AND its
+suite is green, stamping `$DEST/maestro-deployed.json` with the source path + deployed sha. The repo
+is the PROJECT; the installed `.claude` is stable PRODUCTION. The loop: run production → edit here →
+reinstall (clean+green) → repeat. Rollback = re-run `install.sh` from a good commit (not `git checkout`).
 
 > **This contract loads globally** (installed at `~/.claude/AGENTS.md`, imported by
 > `~/.claude/CLAUDE.md`), so it applies in **whatever repo the session runs in**. The layout below
@@ -34,7 +37,7 @@ rules/               the founder's global engineering rules — install.sh deplo
 tests/               black-box suite for every script and hook (also the repo verify command)
 docs/                architecture.md + decision log
 settings.hooks.json  the hooks block to merge into .claude/settings.json
-install.sh           symlink deploy into ~/.claude or <project>/.claude
+install.sh           copy deploy into ~/.claude or <project>/.claude (clean+green only; writes a provenance stamp)
 ```
 
 ## Triage: every task gets a tier (risk × size)
