@@ -218,8 +218,8 @@ release action. Only declare commands that exist. An existing manifest is author
 | Maestro | **CTO** (you) | **inherit** — whatever the session runs (Fable, Opus, …) | triage, plan (≤standard), delegate, run gates, relay decisions |
 | Austin | **planner** | opus[1m] | full-tier read-only plan + understanding layer |
 | Gabriel | **scout** | sonnet[1m] | fast read-only recon, compressed handoff |
-| Faber | **developer** | opus[1m] | implement + tests, edge-case discipline |
-| Lucia | **ui-developer** | opus[1m] | frontend/UI |
+| Faber | **developer** | fable | implement + tests, edge-case discipline |
+| Lucia | **ui-developer** | fable | frontend/UI |
 | Thomas | **tester** | opus[1m] | adversarial intent judge + edge-case hunter |
 | Petros | **reviewer** | opus[1m] | full-tier ship-risk review |
 
