@@ -90,6 +90,10 @@ PY
 # crew .md -> agents/ ; hook .sh -> hooks/ ; the whole skill dir -> skills/maestro
 for f in "$ROOT"/maestro/crew/*.md;  do copy_owned "$f" "$DEST/agents/$(basename "$f")"; done
 for f in "$ROOT"/maestro/hooks/*.sh; do copy_owned "$f" "$DEST/hooks/$(basename "$f")"; done
+# Shared python helper for the two guards (imported via sys.path beside the hooks). It is a
+# .py module, not a *.sh hook, so it needs its own copy line to ride along into hooks/ — the
+# guards import it from their own dir in BOTH this repo tree and the deployed copy.
+for f in "$ROOT"/maestro/hooks/*.py; do [ -e "$f" ] || continue; copy_owned "$f" "$DEST/hooks/$(basename "$f")"; done
 chmod +x "$DEST"/hooks/*.sh 2>/dev/null || true
 copy_owned "$ROOT/maestro" "$DEST/skills/maestro"
 

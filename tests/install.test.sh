@@ -76,6 +76,18 @@ assert_file_exists "$DEST/hooks/maestro-engage.sh" "happy: hook deployed"
 [ -x "$DEST/hooks/maestro-engage.sh" ] && _result ok "happy: hook is chmod +x" \
   || _result fail "happy: hook is chmod +x" "hook not executable"
 
+# guard_lib.py (the shared guard helper module) must ride along into hooks/ beside the guards —
+# the *.sh copy loop would skip it (it is a .py), so install.sh has a dedicated *.py copy line.
+# The guards import it from their own dir; without it the deployed guards would fail to import.
+assert_file_exists "$DEST/hooks/guard_lib.py" "happy: shared guard_lib.py deployed beside the hooks"
+[ ! -L "$DEST/hooks/guard_lib.py" ] && _result ok "happy: guard_lib.py is a copy not a symlink" \
+  || _result fail "happy: guard_lib.py is a copy not a symlink" "guard_lib.py is a symlink"
+if cmp -s "$SRC/maestro/hooks/guard_lib.py" "$DEST/hooks/guard_lib.py"; then
+  _result ok "happy: guard_lib.py copy is content-equal to source"
+else
+  _result fail "happy: guard_lib.py copy is content-equal to source" "content differs"
+fi
+
 # whole skill dir copied (SKILL.md + scripts/ + charter/), not a symlink
 [ ! -L "$DEST/skills/maestro" ] && _result ok "happy: skill dir is a copy not a symlink" \
   || _result fail "happy: skill dir is a copy not a symlink" "skills/maestro is a symlink"

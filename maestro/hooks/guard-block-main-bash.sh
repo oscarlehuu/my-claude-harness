@@ -11,7 +11,31 @@ Robust tokenization via shlex (respects quotes) — mirrors pi foreman guard.ts.
 Not a perfect seal (a determined model can use exotic paths); the commit-gate +
 human review are the ultimate "can't ship broken" backstops.
 """
-import sys, json, shlex, os, re, functools, subprocess, datetime, fnmatch
+import sys, json, shlex, os, re, functools, subprocess, datetime
+
+# Shared pure helpers live in guard_lib.py beside this hook (same dir in BOTH the repo
+# tree and the deployed ~/.claude/hooks/ copy — install.sh copies it alongside). The
+# GUARD_LIB_DIR env override lets tests point at a simulated deployed dir; otherwise we
+# resolve this hook's own real directory (realpath in case it is reached via a symlink).
+sys.path.insert(0, os.environ.get("GUARD_LIB_DIR") or os.path.dirname(os.path.realpath(__file__)))
+# ANY failure to load guard_lib.py is a broken safety component, NOT "git unavailable" — the
+# spine invariant says it must OVER-block (exit 2), never fall through. An unwrapped exception
+# here exits 1, which the hook contract (architecture.md: exit 2 blocks, any other nonzero is a
+# non-blocking error) reads as ALLOW — a protected write would slip through. So we catch it and
+# exit 2, naming the lib so a mystery block is debuggable (a partial deploy that copies the .sh
+# before the .py is the realistic trigger). Catch the BROAD Exception, not just ImportError: a
+# PRESENT-BUT-CORRUPT lib (truncated mid-`cp`, the other half of the same non-atomic partial
+# deploy) raises SyntaxError, which is NOT an ImportError subclass — a narrow except would let
+# it propagate to exit 1 = ALLOW. The mlog shim is not installed yet at this point, so this
+# uses the raw sys.exit.
+try:
+    from guard_lib import git_toplevel, outer_repos, load_config, glob_match
+except Exception as _e:
+    sys.stderr.write(
+        "BLOCKED: guard helper library 'guard_lib.py' could not be imported beside this hook "
+        "(%s). Over-blocking to stay safe; re-run install.sh to restore the deployed copy.\n" % _e
+    )
+    sys.exit(2)
 
 
 HOOK = "guard-block-main-bash"
@@ -133,17 +157,8 @@ def _canon(t):
         return t
 
 
-def _git_toplevel(d):
-    """git work-tree root containing dir d, or '' if d is in no repo / git unavailable."""
-    try:
-        return os.path.realpath(
-            subprocess.check_output(
-                ["git", "-C", d, "rev-parse", "--show-toplevel"],
-                stderr=subprocess.DEVNULL,
-            ).decode().strip()
-        )
-    except Exception:
-        return ""
+# git work-tree root containing dir d, or '' if d is in no repo / git unavailable.
+_git_toplevel = git_toplevel
 
 
 def _nearest_existing_dir(ct):
@@ -190,26 +205,14 @@ def enclosing_repos(ct):
     next enclosing work tree, repeating until git finds none (filesystem root). realpath is
     resolved once per step; git is queried once per enclosing level (a handful at most).
     """
-    chain = []
     inner = target_repo(ct)
     # target_repo falls back to _proj even when ct is in no repo; only treat it as a real
     # enclosing root if it is genuinely a git work tree.
     d = _nearest_existing_dir(ct)
     if not (d and os.path.isdir(d) and _git_toplevel(d)):
         return tuple()
-    cur = inner
-    seen = set()
-    while cur and cur not in seen:
-        seen.add(cur)
-        chain.append(cur)
-        parent = os.path.dirname(cur)
-        if not parent or parent == cur:
-            break
-        outer = _git_toplevel(parent)
-        if not outer or outer in seen:
-            break
-        cur = outer
-    return tuple(chain)
+    # innermost first, then the shared strictly-outer walk for the rest of the chain.
+    return tuple([inner] + outer_repos(inner))
 
 
 @functools.lru_cache(maxsize=256)
@@ -223,13 +226,29 @@ def outer_protects(ct):
     always wins over inner carve-outs; the innermost repo's own protected list is enforced
     later by the budget/protected gate (with accurate usage in its log).
     """
-    chain = enclosing_repos(ct)
+    # RESOLUTION (enclosing_repos) is the legitimate fail-open: if git is unavailable or ct is
+    # in no repo, there is no strictly-outer chain → nothing can leak outward → not protected
+    # here (the normal gate still runs). EVALUATION (load_config + glob_match on a resolved
+    # chain) is the round-4 inversion: this runs inside analyze()/benign_target(), BEFORE PHASE
+    # A, and a matcher that RAISES at call time here would otherwise propagate uncaught to the
+    # top-level = exit 1 = ALLOW. Per the spine invariant a protected decision we cannot compute
+    # is NEVER an allow — over-block immediately (short_block exits 2, naming the component).
+    try:
+        chain = enclosing_repos(ct)
+    except Exception:
+        return False  # resolution failed (git unavailable / not a repo) → legitimate fail-open
     if len(chain) < 2:
         return False  # no strictly-outer repo → nothing can leak outward
-    for repo in chain[1:]:
-        _, _, prot = load_config(repo)
-        if any(glob_match(repo, p, ct) for p in prot):
-            return True
+    try:
+        for repo in chain[1:]:
+            _, _, prot = load_config(repo)
+            if any(glob_match(repo, p, ct) for p in prot):
+                return True
+    except Exception as _e:
+        short_block(
+            "BLOCKED: the outer-repo protected-path check could not be evaluated for this target "
+            "(%r). Over-blocking to stay safe; the guard helper raised mid-decision.\n" % _e
+        )
     return False
 
 
@@ -512,68 +531,6 @@ def git(repo, *args):
     return subprocess.check_output(["git", "-C", repo, *args], stderr=subprocess.DEVNULL)
 
 
-def load_config(repo):
-    lines, files, protected = 50, 2, []
-    path = os.path.join(repo, ".claude", "maestro-budget")
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            for raw in f:
-                raw = raw.strip()
-                if not raw or raw.startswith("#") or "=" not in raw:
-                    continue
-                k, v = raw.split("=", 1)
-                k, v = k.strip().upper(), v.strip()
-                if k == "LINES":
-                    try:
-                        n = int(v)
-                        if n >= 0:
-                            lines = n
-                    except Exception:
-                        lines = 50
-                elif k == "FILES":
-                    try:
-                        n = int(v)
-                        if n >= 0:
-                            files = n
-                    except Exception:
-                        files = 2
-                elif k == "PROTECTED":
-                    protected = [p for p in v.split(":") if p]
-    except FileNotFoundError:
-        pass
-    except Exception:
-        return 50, 2, []
-    return lines, files, protected
-
-
-def rel_for(repo, path):
-    try:
-        return os.path.relpath(os.path.realpath(path), repo).replace(os.sep, "/")
-    except Exception:
-        return (path or "").replace(os.sep, "/")
-
-
-def match_segments(psegs, ssegs):
-    if not psegs:
-        return not ssegs
-    head = psegs[0]
-    if head == "**":
-        return match_segments(psegs[1:], ssegs) or (bool(ssegs) and match_segments(psegs, ssegs[1:]))
-    return bool(ssegs) and fnmatch.fnmatchcase(ssegs[0], head) and match_segments(psegs[1:], ssegs[1:])
-
-
-def glob_match(repo, pattern, abs_path):
-    pat = pattern.strip().replace("\\", "/")
-    if not pat:
-        return False
-    if os.path.isabs(pat):
-        subject = os.path.realpath(abs_path).lstrip(os.sep).replace(os.sep, "/")
-        pat = os.path.realpath(pat).lstrip(os.sep).replace(os.sep, "/")
-    else:
-        subject = rel_for(repo, abs_path)
-    return match_segments([p for p in pat.split("/") if p != ""], [p for p in subject.split("/") if p != ""])
-
-
 def is_no_count_rel(rel):
     rel = rel.replace("\\", "/")
     base = os.path.basename(rel)
@@ -650,7 +607,24 @@ def write_log(repo, target, reason, lines_used, files_used):
         pass
 
 
-result = analyze(command)
+# analyze() classifies the command and, via benign_target(), already evaluates a protected
+# decision: benign_target() calls outer_protects() AND target_repo() (→ git_toplevel) to decide
+# if a redirect/tee/cp target is exempt. Those are EVALUATION helper calls on a resolved target
+# — a RAISE there is a broken safety component, NOT "no repo" (the healthy lib returns '' for
+# that). Round 4 left analyze() unwrapped, so a git_toplevel raise inside benign_target →
+# target_repo propagated uncaught → exit 1, which the hook contract reads as ALLOW. Per the
+# spine invariant a protected/benign decision we cannot compute is NEVER an allow: over-block
+# (exit 2), naming the failed helper. short_block()/allow() raise SystemExit by design — let
+# those through; only a genuine helper raise lands in the over-block.
+try:
+    result = analyze(command)
+except SystemExit:
+    raise
+except Exception as _analyze_e:
+    short_block(
+        "BLOCKED: the command's benign/protected classification could not be evaluated "
+        "(%r). Over-blocking to stay safe; the guard helper raised mid-decision.\n" % _analyze_e
+    )
 if not result:
     allow()
 reason, target = result
@@ -665,13 +639,32 @@ ctarget = _canon(target) if target else ""
 # ── PHASE A: PROTECTION — must evaluate to completion INDEPENDENT of usage computation.
 # Enclosing-repo discovery, config load and glob matching need a git work tree but NOT HEAD;
 # a freshly `git init`-ed repo with no commit yet is a valid work tree. Keeping protection in
-# its own try-block (separate from PHASE B's `current_usage`, which runs `git diff HEAD` and
+# its own region (separate from PHASE B's `current_usage`, which runs `git diff HEAD` and
 # RAISES on a HEAD-less repo) is the spine invariant: a repo-state exception in usage must not
 # skip the protected union. Mirrors the edit guard's ordering, where the strictly-outer union
-# runs and can exit 2 before any HEAD-dependent work. If THIS block itself throws for
-# git-unavailable reasons, the fail-open posture is preserved (tester/commit-gate backstop).
+# runs and can exit 2 before any HEAD-dependent work.
+#
+# THE DEFAULT IS INVERTED (round 4, Petros B3). The protected region is split into TWO scopes
+# with OPPOSITE failure postures:
+#   (A) RESOLUTION — finding the governing repo + enclosing chain. This is the ONE place a
+#       legitimate fail-open survives: if git is unavailable or the target is in no repo,
+#       there is genuinely nothing to govern → allow(). Scoped TIGHTLY to the resolution calls.
+#   (B) EVALUATION — load the protected config and match it against the target. Once a target
+#       is RESOLVED, ANY exception here (a matcher that raises, a broken config load) means we
+#       could NOT compute the protected decision → that is NEVER an ALLOW. It OVER-blocks
+#       (exit 2), naming the failed component for debuggability. The old single try with a
+#       broad `except Exception: allow()` swallowed a call-time matcher raise into ALLOW —
+#       that broad fail-open WAS the bug; matcher raises now land uniformly on BLOCK.
 max_lines, max_files, protected = 50, 2, []
 repo = ""
+repo_chain = ()
+# The chain walk (target_repo / enclosing_repos → git_toplevel / outer_repos) is EVALUATION,
+# NOT resolution: a healthy lib signals "no governing repo" by RETURN VALUE (git_toplevel → '',
+# enclosing_repos → empty tuple), never by raising. A RAISE from these helpers is a broken
+# safety component mid-decision → per the spine invariant it must OVER-block (exit 2), never
+# fall into the resolution fail-open. Round 4 had this walk INSIDE the resolution try, so an
+# outer_repos / git_toplevel raise reached allow() (exit 0) on a protected path — the B3
+# under-block. Wrap it in its OWN evaluation try that short_blocks on a raise.
 try:
     if ctarget:
         repo = target_repo(ctarget)
@@ -679,44 +672,90 @@ try:
         # target is in no repo, the chain is empty and only the session fallback below runs.
         repo_chain = enclosing_repos(ctarget)
     else:
+        repo = ""        # resolved by the git rev-parse fail-open block below
+        repo_chain = ()
+except SystemExit:
+    raise
+except Exception as _walk_e:
+    short_block(
+        "BLOCKED: the governing-repo chain walk could not be evaluated for this target "
+        "(%r). Over-blocking to stay safe; the guard helper raised mid-decision.\n" % _walk_e
+    )
+
+# (A) RESOLUTION — legitimate fail-open: git-unavailable / not-a-repo → nothing to govern.
+# This is the ONLY fail-open in PHASE A and it catches the git-subprocess paths that genuinely
+# raise when there is no work tree: the no-target rev-parse anchor and the work-tree
+# confirmation. A healthy chain walk above that found no repo leaves repo='' (no-target) or a
+# _proj fallback that is not a real work tree — the confirmation rev-parse then raises here and
+# we allow(). A HEAD-less repo does NOT land here: nothing here queries HEAD. allow() exits, so
+# control reaches the evaluation block below ONLY when resolution succeeded.
+try:
+    if not ctarget:
         repo = os.path.realpath(git(os.path.realpath(_proj), "rev-parse", "--show-toplevel").decode().strip())
         repo_chain = (repo,)
     # Confirm the resolved root really is a git work tree before gating on it (HEAD-agnostic).
     git(repo, "rev-parse", "--show-toplevel")
     if not repo_chain:
         repo_chain = (repo,)
+except SystemExit:
+    raise
+except Exception:
+    # The governing repo could not be resolved (git unavailable / not a repo) → genuinely
+    # nothing to protect → fail open (unchanged posture).
+    allow()
+
+# (B) EVALUATION — target is RESOLVED; the protected decision must complete or BLOCK. The
+# direct-mode carve-out and the protected-glob union both live here. Any exception is a
+# decision we could not compute safely → over-block (exit 2), never allow().
+#
+# PROTECTED is a UNION OF GATES across the enclosing chain, but exemptions never flow
+# ACROSS repo boundaries. Ordering encodes that:
+#   (1) STRICTLY-OUTER repos' protected lists are checked FIRST — an inner repo's
+#       maestro-direct or permissive config can never bypass an outer repo's PROTECTED.
+#   (2) THEN the GOVERNING repo's own direct-mode carve-out applies — a founder who put THIS
+#       repo in direct mode wants direct mutations to it, even on its own protected paths
+#       (round-1 per-repo carve-out, single-repo case). `repo` is the TARGET repo for a real
+#       target, or the SESSION repo on the no-target fallback (e.g. `git reset --hard`) — so
+#       this one check honors the marker per target AND on the session fallback, replacing the
+#       removed session early-exit without ever exempting another repo's files cross-session.
+#   (3) THEN the innermost repo's own protected list. Each repo's globs are evaluated
+#       against the target's path RELATIVE TO THAT repo's own root.
+# Size is irrelevant on protected paths, so logs record 0/0 usage here (usage may not yet
+# be known, and is genuinely unknowable for a HEAD-less repo) — matches the edit guard.
+try:
     # Budget/protected config stays anchored to the innermost (target) repo — round-1 behaviour.
     max_lines, max_files, protected = load_config(repo)
-
-    # PROTECTED is a UNION OF GATES across the enclosing chain, but exemptions never flow
-    # ACROSS repo boundaries. Ordering encodes that:
-    #   (1) STRICTLY-OUTER repos' protected lists are checked FIRST — an inner repo's
-    #       maestro-direct or permissive config can never bypass an outer repo's PROTECTED.
-    #   (2) THEN the GOVERNING repo's own direct-mode carve-out applies — a founder who put THIS
-    #       repo in direct mode wants direct mutations to it, even on its own protected paths
-    #       (round-1 per-repo carve-out, single-repo case). `repo` is the TARGET repo for a real
-    #       target, or the SESSION repo on the no-target fallback (e.g. `git reset --hard`) — so
-    #       this one check honors the marker per target AND on the session fallback, replacing the
-    #       removed session early-exit without ever exempting another repo's files cross-session.
-    #   (3) THEN the innermost repo's own protected list. Each repo's globs are evaluated
-    #       against the target's path RELATIVE TO THAT repo's own root.
-    # Size is irrelevant on protected paths, so logs record 0/0 usage here (usage may not yet
-    # be known, and is genuinely unknowable for a HEAD-less repo) — matches the edit guard.
     if target:
         for _r in repo_chain[1:]:                      # (1) strictly-outer repos
-            if any(glob_match(_r, p, ctarget) for p in load_config(_r)[2]):
+            _r_prot = load_config(_r)[2]
+            if any(glob_match(_r, p, ctarget) for p in _r_prot):
                 write_log(_r, ctarget, "protected", 0, 0)
-                short_block("BLOCKED: protected path. Size does not matter on protected paths; run maestro for this task.\n")
+                # When an outer repo's budget was UNREADABLE, load_config failed closed to "**";
+                # name that cause so the over-block self-explains (matches the edit guard).
+                _cause = getattr(_r_prot, "fail_closed_reason", "")
+                _suffix = " (%s)" % _cause if _cause else ""
+                short_block("BLOCKED: protected path. Size does not matter on protected paths; run maestro for this task.%s\n" % _suffix)
     if os.path.exists(os.path.join(repo, ".claude", "maestro-direct")):  # (2) inner direct-mode
         allow()
     if target:                                         # (3) innermost repo's own protected
         if any(glob_match(repo, p, ctarget) for p in protected):
             write_log(repo, ctarget, "protected", 0, 0)
-            short_block("BLOCKED: protected path. Size does not matter on protected paths; run maestro for this task.\n")
-except Exception:
-    # Protection could not be evaluated for git-unavailable reasons → fail open (unchanged
-    # posture). A HEAD-less repo does NOT land here: nothing above queries HEAD.
-    allow()
+            # Same fail-closed cause surfacing for the innermost (governing) repo's budget.
+            _cause = getattr(protected, "fail_closed_reason", "")
+            _suffix = " (%s)" % _cause if _cause else ""
+            short_block("BLOCKED: protected path. Size does not matter on protected paths; run maestro for this task.%s\n" % _suffix)
+except SystemExit:
+    # allow()/short_block() raise SystemExit by design — let the intended exit through.
+    raise
+except Exception as _eval_e:
+    # The target was RESOLVED but the protected decision could not be COMPUTED (a matcher
+    # raised, config load threw). Per the spine invariant this is NEVER an ALLOW: over-block
+    # (exit 2), naming the failed component so a mystery block is debuggable. This is the
+    # round-4 inversion — the old broad `except: allow()` here was the B3 under-block.
+    short_block(
+        "BLOCKED: the protected-path check could not be evaluated for this target "
+        "(%r). Over-blocking to stay safe; the guard helper raised mid-decision.\n" % _eval_e
+    )
 
 # ── PHASE B: BUDGET — usage requires HEAD (`git diff HEAD`). If it cannot be computed (e.g.
 # a HEAD-less repo with no commit yet), budget is genuinely unknowable → fail open. Protection

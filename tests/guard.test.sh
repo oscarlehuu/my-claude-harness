@@ -1013,6 +1013,703 @@ run_hook_proj "$EDIT_GUARD" \
 
 # ---------------------------------------------------------------------------
 echo ""
+echo "=== anti-divergence: shared guard helpers have exactly ONE definition ==="
+# The whole point of guard_lib.py: the segment/glob matchers and the protected-config
+# loader must exist in ONE place. A re-added second copy (the exact divergence that bit us)
+# must make this suite FAIL. We grep the two hooks for any `def <helper>(` — they must define
+# NONE of the shared helpers locally (they import them from guard_lib). guard_lib.py itself is
+# the single home and is NOT scanned. Proven to bite: temporarily re-adding a copy turns these
+# PASS lines into FAILs (see the regression-bite check below).
+SHARED_HELPERS="match_segments glob_match load_config load_protected git_toplevel outer_repos"
+GUARD_FILES="$EDIT_GUARD $BASH_GUARD"
+for helper in $SHARED_HELPERS; do
+  # grep -c exits 1 when a file has zero matches; under `set -o pipefail` that would abort the
+  # suite, so count occurrences with a non-failing grep -o | wc -l instead.
+  count="$({ grep -hoE "^[[:space:]]*def ${helper}\(" $GUARD_FILES 2>/dev/null || true; } | wc -l | tr -d ' ')"
+  if [ "$count" -eq 0 ]; then
+    echo "  PASS [no local 'def ${helper}(' in either guard — single source in guard_lib.py]"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL [shared helper '${helper}' is redefined in a guard ($count copies) — divergence risk; move it to guard_lib.py]"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Regression-bite proof: synthesize a guard file that re-adds a local `def match_segments(`
+# and confirm the SAME grep that the assertions use would flag it (count >= 1). This guarantees
+# the anti-divergence check actually fires on a real regression rather than passing vacuously.
+BITE_FILE="$TMP_ROOT/bite-guard.sh"
+{ cat "$BASH_GUARD"; printf '\ndef match_segments(psegs, ssegs):\n    return True\n'; } > "$BITE_FILE"
+bite_count="$({ grep -hoE "^[[:space:]]*def match_segments\(" "$BITE_FILE" 2>/dev/null || true; } | wc -l | tr -d ' ')"
+if [ "$bite_count" -ge 1 ]; then
+  echo "  PASS [anti-divergence grep BITES on a re-added 'def match_segments(' (count=$bite_count)]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [anti-divergence grep did NOT bite on a re-added copy — the check is vacuous]"
+  FAIL=$((FAIL + 1))
+fi
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== both-layouts: guards run green from the repo tree AND a deployed dir ==="
+# Tests call the hooks in-tree (guard_lib.py beside them in maestro/hooks/). Production runs
+# the COPIED hooks from ~/.claude/hooks/ with guard_lib.py copied alongside. Simulate the
+# deployed layout: copy BOTH guards + the lib into a flat temp dir (no maestro/hooks/ tree,
+# no repo around them) and fire one real protected-block decision through each. If the lib
+# resolution were wrong, the import would fail and the guard would mis-decide (fail-open → 0).
+DEPLOY_DIR="$TMP_ROOT/deployed-hooks"
+mkdir -p "$DEPLOY_DIR"
+# Mirror install.sh's deployed hooks/ set: both guards, the shared lib, AND lib-log.sh (the
+# guards source it for observability). install.sh's *.sh + *.py copy lines deploy all of these
+# into the same flat dir; the test must reproduce that layout faithfully.
+cp "$EDIT_GUARD" "$BASH_GUARD" \
+   "$HARNESS_DIR/maestro/hooks/guard_lib.py" \
+   "$HARNESS_DIR/maestro/hooks/lib-log.sh" \
+   "$DEPLOY_DIR/"
+chmod +x "$DEPLOY_DIR/guard-block-main-edits.sh" "$DEPLOY_DIR/guard-block-main-bash.sh"
+DEPLOY_EDIT="$DEPLOY_DIR/guard-block-main-edits.sh"
+DEPLOY_BASH="$DEPLOY_DIR/guard-block-main-bash.sh"
+
+# A target repo with a protected path; the guards must still BLOCK it when run from the
+# deployed dir (proving the shared lib was found via the hook's own dir, not the cwd/tree).
+DEPLOY_REPO="$(make_repo deployed-target 'LINES=50
+FILES=2
+PROTECTED=src/**')"
+run_hook_proj "$DEPLOY_EDIT" \
+  "$(edit_payload_content "$DEPLOY_REPO/src/app.ts" 'x')" \
+  2 \
+  "deployed layout (edit-guard): protected repo file → BLOCK (lib found beside the hook)" \
+  "$DEPLOY_REPO"
+run_hook_proj "$DEPLOY_BASH" \
+  "$(bash_payload "echo hi > $DEPLOY_REPO/src/app.ts")" \
+  2 \
+  "deployed layout (bash-guard): protected redirect → BLOCK (lib found beside the hook)" \
+  "$DEPLOY_REPO"
+# And a non-protected path from the deployed dir still ALLOWs (the lib is genuinely doing the
+# matching, not blanket-blocking because of a broken import). (Dropped a redundant re-fire of
+# the protected→BLOCK assertion above that was mislabeled "control"; the ALLOW cases below are
+# the real control proving the lib matches rather than blanket-blocks.)
+DEPLOY_OPEN="$(make_repo deployed-open 'LINES=50
+FILES=2')"
+run_hook_proj "$DEPLOY_EDIT" \
+  "$(edit_payload_content "$DEPLOY_OPEN/src/app.ts" 'x')" \
+  0 \
+  "deployed layout (edit-guard): non-protected under-budget file → ALLOW (lib matches, not blanket-blocks)" \
+  "$DEPLOY_OPEN"
+run_hook_proj "$DEPLOY_BASH" \
+  "$(bash_payload "echo hi > $DEPLOY_OPEN/src/app.ts")" \
+  0 \
+  "deployed layout (bash-guard): non-protected redirect → ALLOW" \
+  "$DEPLOY_OPEN"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== missing-lib: guard_lib.py absent from the hook dir → OVER-BLOCK on both guards ==="
+# The mirror of the both-layouts happy path. A partial install (install.sh copies .sh on one
+# line, .py on the next, stamp last) can leave the guards present without guard_lib.py and no
+# staleness flag. The hook contract reads exit 2 as BLOCK and ANY OTHER nonzero as a
+# non-blocking error (ALLOW) — so a bare ImportError (exit 1) would let a protected mutation
+# through. Both guards must catch the import failure and exit 2, naming the lib for debug.
+NOLIB_DIR="$TMP_ROOT/nolib-hooks"
+mkdir -p "$NOLIB_DIR"
+# Deliberately copy the guards + lib-log.sh but NOT guard_lib.py (the partial-deploy window).
+cp "$EDIT_GUARD" "$BASH_GUARD" \
+   "$HARNESS_DIR/maestro/hooks/lib-log.sh" \
+   "$NOLIB_DIR/"
+chmod +x "$NOLIB_DIR/guard-block-main-edits.sh" "$NOLIB_DIR/guard-block-main-bash.sh"
+NOLIB_EDIT="$NOLIB_DIR/guard-block-main-edits.sh"
+NOLIB_BASH="$NOLIB_DIR/guard-block-main-bash.sh"
+# A real protected target (proves it is the lib import, not an empty-target shortcut, that
+# triggers the block). The repo is irrelevant to the import seam, but use a protected path so
+# the "should have blocked anyway" intent is unambiguous.
+NOLIB_REPO="$(make_repo nolib-target 'LINES=50
+FILES=2
+PROTECTED=src/**')"
+
+NOLIB_EDIT_OUT="$TMP_ROOT/nolib-edit.out"
+run_hook_capture_proj "$NOLIB_EDIT" \
+  "$(edit_payload_content "$NOLIB_REPO/src/app.ts" 'x')" \
+  2 \
+  "missing-lib (edit-guard): protected edit → exit 2 (over-block, not fall-through)" \
+  "$NOLIB_REPO" \
+  "$NOLIB_EDIT_OUT"
+if grep -q "guard_lib" "$NOLIB_EDIT_OUT"; then
+  echo "  PASS [missing-lib (edit-guard): failure message names guard_lib]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [missing-lib (edit-guard): failure message must name guard_lib]"
+  cat "$NOLIB_EDIT_OUT" | sed 's/^/    out: /'
+  FAIL=$((FAIL + 1))
+fi
+
+NOLIB_BASH_OUT="$TMP_ROOT/nolib-bash.out"
+run_hook_capture_proj "$NOLIB_BASH" \
+  "$(bash_payload "echo hi > $NOLIB_REPO/src/app.ts")" \
+  2 \
+  "missing-lib (bash-guard): protected redirect → exit 2 (over-block, not fall-through)" \
+  "$NOLIB_REPO" \
+  "$NOLIB_BASH_OUT"
+if grep -q "guard_lib" "$NOLIB_BASH_OUT"; then
+  echo "  PASS [missing-lib (bash-guard): failure message names guard_lib]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [missing-lib (bash-guard): failure message must name guard_lib]"
+  cat "$NOLIB_BASH_OUT" | sed 's/^/    out: /'
+  FAIL=$((FAIL + 1))
+fi
+# A non-protected path with the lib MISSING must ALSO block (the import seam fires before any
+# target classification — a broken safety component over-blocks everything, not just protected
+# paths). Proves the exit-2 is the import guard, not the protected match.
+NOLIB_OPEN="$(make_repo nolib-open 'LINES=50
+FILES=2')"
+run_hook_proj "$NOLIB_EDIT" \
+  "$(edit_payload_content "$NOLIB_OPEN/src/app.ts" 'x')" \
+  2 \
+  "missing-lib (edit-guard): even a non-protected edit → exit 2 (broken lib over-blocks all)" \
+  "$NOLIB_OPEN"
+run_hook_proj "$NOLIB_BASH" \
+  "$(bash_payload "echo hi > $NOLIB_OPEN/src/app.ts")" \
+  2 \
+  "missing-lib (bash-guard): even a non-protected redirect → exit 2 (broken lib over-blocks all)" \
+  "$NOLIB_OPEN"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== corrupt-lib: PRESENT-but-broken guard_lib.py → OVER-BLOCK on both guards, both seams ==="
+# The OTHER half of the same non-atomic partial-deploy window the missing-lib block covers.
+# install.sh copy_owned() is `rm -rf; cp -R`: the missing half (rm done, cp not started) is the
+# missing-lib case; the corrupt half (cp truncated mid-stream) leaves guard_lib.py PRESENT but
+# syntactically invalid. A truncated module raises SyntaxError on import — which is NOT an
+# ImportError subclass, so a narrow `except ImportError` would let it PROPAGATE to exit 1, which
+# the hook contract reads as ALLOW. Both guards must catch the BROAD exception class and exit 2.
+# Bite-proof: on the round-2 narrow-except code these assertions FAIL in the ALLOW direction
+# (edits exit 0, bash exit 1) — they only pass once the except is widened to `except Exception`.
+CORRUPT_DIR="$TMP_ROOT/corrupt-hooks"
+mkdir -p "$CORRUPT_DIR"
+cp "$EDIT_GUARD" "$BASH_GUARD" \
+   "$HARNESS_DIR/maestro/hooks/lib-log.sh" \
+   "$CORRUPT_DIR/"
+chmod +x "$CORRUPT_DIR/guard-block-main-edits.sh" "$CORRUPT_DIR/guard-block-main-bash.sh"
+# A truncated copy: cut mid-statement so the module ends on an unterminated construct (open
+# paren never closed) — exactly what a streaming `cp` interrupted partway leaves on disk. This
+# raises SyntaxError at import, the corruption class a narrow ImportError-only catch misses.
+printf 'import os\n\ndef git_toplevel(d):\n    return os.path.realpath(\n' > "$CORRUPT_DIR/guard_lib.py"
+# Sanity: the fixture really is a SyntaxError (not an ImportError) — guards the bite-proof claim.
+if GUARD_LIB_DIR="$CORRUPT_DIR" python3 - <<'PY'
+import os, sys
+sys.path.insert(0, os.environ["GUARD_LIB_DIR"])
+try:
+    import guard_lib  # noqa: F401
+except SyntaxError:
+    sys.exit(0)   # expected: corrupt fixture raises SyntaxError
+except Exception:
+    sys.exit(1)   # any OTHER exception means the fixture is not exercising the SyntaxError path
+sys.exit(2)       # imported cleanly → fixture is not actually corrupt
+PY
+then
+  echo "  PASS [corrupt-lib fixture raises SyntaxError (the non-ImportError corruption class)]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [corrupt-lib fixture did NOT raise SyntaxError — the bite-proof premise is broken]"
+  FAIL=$((FAIL + 1))
+fi
+CORRUPT_EDIT="$CORRUPT_DIR/guard-block-main-edits.sh"
+CORRUPT_BASH="$CORRUPT_DIR/guard-block-main-bash.sh"
+
+# (a) SINGLE-REPO protected path → the edits-guard MAIN seam and the bash-guard import seam.
+CORRUPT_REPO="$(make_repo corrupt-target 'LINES=50
+FILES=2
+PROTECTED=src/**')"
+CORRUPT_EDIT_OUT="$TMP_ROOT/corrupt-edit.out"
+run_hook_capture_proj "$CORRUPT_EDIT" \
+  "$(edit_payload_content "$CORRUPT_REPO/src/app.ts" 'x')" \
+  2 \
+  "corrupt-lib (edit-guard, main seam): protected edit → exit 2 (over-block, not fall-through)" \
+  "$CORRUPT_REPO" \
+  "$CORRUPT_EDIT_OUT"
+if grep -q "guard_lib" "$CORRUPT_EDIT_OUT"; then
+  echo "  PASS [corrupt-lib (edit-guard): failure message names guard_lib]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [corrupt-lib (edit-guard): failure message must name guard_lib]"
+  cat "$CORRUPT_EDIT_OUT" | sed 's/^/    out: /'
+  FAIL=$((FAIL + 1))
+fi
+CORRUPT_BASH_OUT="$TMP_ROOT/corrupt-bash.out"
+run_hook_capture_proj "$CORRUPT_BASH" \
+  "$(bash_payload "echo hi > $CORRUPT_REPO/src/app.ts")" \
+  2 \
+  "corrupt-lib (bash-guard): protected redirect → exit 2 (over-block, not fall-through)" \
+  "$CORRUPT_REPO" \
+  "$CORRUPT_BASH_OUT"
+if grep -q "guard_lib" "$CORRUPT_BASH_OUT"; then
+  echo "  PASS [corrupt-lib (bash-guard): failure message names guard_lib]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [corrupt-lib (bash-guard): failure message must name guard_lib]"
+  cat "$CORRUPT_BASH_OUT" | sed 's/^/    out: /'
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) NESTED fixture → exercises the edits-guard OUTER-UNION seam (the seam B2 proved was the
+# silent fall-through: SyntaxError exits 1, `_outer_exit -eq 2` never fires, the single-repo
+# gate hits the same corrupt lib). With _anchor set to an inner repo that has a strictly-outer
+# enclosing repo, the outer-union heredoc runs FIRST; a corrupt lib there must exit 2 and the
+# bash side must propagate it. The inner target itself is in the inner repo, NOT in the outer
+# PROTECTED glob — so a working lib would ALLOW; only the broken-lib over-block makes it BLOCK,
+# proving the block comes from the outer-union import seam, not a protected match.
+CORRUPT_INNER="$(make_nested corrupt-nest 'lib/vendor' 'LINES=50
+FILES=2
+PROTECTED=src/**')"
+CORRUPT_NEST_OUT="$TMP_ROOT/corrupt-nest.out"
+run_hook_capture_proj "$CORRUPT_EDIT" \
+  "$(edit_payload_content "$CORRUPT_INNER/evil.ts" 'x')" \
+  2 \
+  "corrupt-lib (edit-guard, OUTER-UNION seam): nested target → exit 2 (no silent fall-through)" \
+  "$CORRUPT_INNER" \
+  "$CORRUPT_NEST_OUT"
+if grep -q "guard_lib" "$CORRUPT_NEST_OUT"; then
+  echo "  PASS [corrupt-lib (edit-guard, outer-union seam): failure message names guard_lib]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [corrupt-lib (edit-guard, outer-union seam): failure message must name guard_lib]"
+  cat "$CORRUPT_NEST_OUT" | sed 's/^/    out: /'
+  FAIL=$((FAIL + 1))
+fi
+# The bash guard on the same nested target must also over-block (its single import seam covers
+# all paths — there is no separate outer-union subprocess to fall through).
+run_hook_proj "$CORRUPT_BASH" \
+  "$(bash_payload "echo hi > $CORRUPT_INNER/evil.ts")" \
+  2 \
+  "corrupt-lib (bash-guard): nested redirect → exit 2 (broken lib over-blocks)" \
+  "$CORRUPT_INNER"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== raising-lib: guard_lib imports CLEANLY but a helper RAISES at call time → OVER-BLOCK ==="
+# The THIRD door of the spine invariant (Petros B3), distinct from missing-lib (will not load)
+# and corrupt-lib (SyntaxError on import). Here guard_lib.py imports fine — every `from
+# guard_lib import X` succeeds — but a helper RAISES when CALLED on a protected path. The
+# matcher/config calls sit in the EVALUATION region of each guard; on a RESOLVED target the
+# protected decision could not be computed, which the spine invariant says is NEVER an ALLOW.
+# Bite-proof: on the pre-round-4 code these exit-code assertions FAIL in the ALLOW direction
+# (bash exit 0 via the broad `except: allow()`, edits exit 1 via the unwrapped _budget_exit /
+# the outer-union fall-through). They only pass once the protected default is INVERTED to BLOCK.
+
+# Deploy both guards + lib-log.sh + a guard_lib.py that re-exports the REAL lib and overrides one
+# helper to raise at call time. $1 = dir to build, $2 = helper name to break. The break set is the
+# FULL evaluation-helper surface, not just the matcher/config pair: glob_match, load_config,
+# outer_repos, git_toplevel, rel_for, match_segments. Round 4 only ever broke glob_match/load_config,
+# so the differential matrix never exercised the two helpers (outer_repos, git_toplevel) whose
+# bash-guard cells were the surviving 0/1 coin-flip — the uniformity assertion was vacuous over them.
+make_raising_hooks() {
+  local dir="$1" broken="$2"
+  mkdir -p "$dir"
+  cp "$EDIT_GUARD" "$BASH_GUARD" "$HARNESS_DIR/maestro/hooks/lib-log.sh" "$dir/"
+  chmod +x "$dir/guard-block-main-edits.sh" "$dir/guard-block-main-bash.sh"
+  # Start from a byte-for-byte copy of the real lib (so EVERY imported name exists and the
+  # happy-path helpers still work), then redefine ONE helper to raise when called. The import
+  # itself succeeds — only the call raises, which is exactly the B3 surface.
+  cp "$HARNESS_DIR/maestro/hooks/guard_lib.py" "$dir/guard_lib.py"
+  cat >> "$dir/guard_lib.py" <<RAISEPY
+
+# --- test override: $broken raises at CALL time (clean import, broken body) ---
+def $broken(*_a, **_k):
+    raise RuntimeError("$broken deliberately raised at call time (B3 test override)")
+RAISEPY
+}
+
+# Sanity: the raising fixture must IMPORT cleanly (the whole point — not a missing/corrupt lib).
+RAISE_SANITY_DIR="$TMP_ROOT/raise-sanity"
+make_raising_hooks "$RAISE_SANITY_DIR" glob_match
+if GUARD_LIB_DIR="$RAISE_SANITY_DIR" python3 - <<'PY'
+import os, sys
+sys.path.insert(0, os.environ["GUARD_LIB_DIR"])
+try:
+    from guard_lib import glob_match, load_config, outer_repos, rel_for  # noqa: F401
+except Exception:
+    sys.exit(1)   # must NOT fail to import — that would be the missing/corrupt case, not B3
+try:
+    glob_match("/x", "src/**", "/x/src/a.ts")
+except RuntimeError:
+    sys.exit(0)   # expected: import OK, call raises → the B3 surface
+sys.exit(2)       # call did not raise → fixture is not exercising B3
+PY
+then
+  echo "  PASS [raising-lib fixture imports cleanly but the helper raises at CALL time (the B3 surface)]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [raising-lib fixture is not exercising the clean-import-raising-call surface]"
+  FAIL=$((FAIL + 1))
+fi
+
+# Helper: collect every raising-lib exit code into a list so E6 can assert UNIFORMITY (all 2).
+RAISE_EXITS=""
+
+run_raise_case() {
+  # $1 hook, $2 payload, $3 label, $4 proj_dir, $5 outfile (for message-naming assert)
+  local hook="$1" payload="$2" label="$3" proj_dir="$4" outfile="$5"
+  local actual=0
+  printf '%s' "$payload" | CLAUDE_PROJECT_DIR="$proj_dir" "$hook" >"$outfile" 2>&1 || actual=$?
+  RAISE_EXITS="$RAISE_EXITS $actual"
+  if [ "$actual" -eq 2 ]; then
+    echo "  PASS [$label] (exit $actual)"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL [$label] expected exit 2 (over-block) got $actual"
+    cat "$outfile" | sed 's/^/    stderr: /'
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# (a) glob_match raises — SINGLE protected repo → edits MAIN seam + bash inner-protected match.
+RAISE_GLOB_DIR="$TMP_ROOT/raise-glob"
+make_raising_hooks "$RAISE_GLOB_DIR" glob_match
+RAISE_EDIT="$RAISE_GLOB_DIR/guard-block-main-edits.sh"
+RAISE_BASH="$RAISE_GLOB_DIR/guard-block-main-bash.sh"
+RAISE_REPO="$(make_repo raise-target 'LINES=50
+FILES=2
+PROTECTED=src/**')"
+RG_EDIT_OUT="$TMP_ROOT/raise-glob-edit.out"
+run_raise_case "$RAISE_EDIT" \
+  "$(edit_payload_content "$RAISE_REPO/src/app.ts" 'x')" \
+  "raising glob_match (edit-guard, main seam): protected edit → exit 2 (inverted default)" \
+  "$RAISE_REPO" "$RG_EDIT_OUT"
+RG_BASH_OUT="$TMP_ROOT/raise-glob-bash.out"
+run_raise_case "$RAISE_BASH" \
+  "$(bash_payload "echo hi > $RAISE_REPO/src/app.ts")" \
+  "raising glob_match (bash-guard): protected redirect → exit 2 (inverted default, not broad allow)" \
+  "$RAISE_REPO" "$RG_BASH_OUT"
+# E11: an evaluation-throw block must NAME its cause (the helper that raised) so it is debuggable.
+if grep -qi "glob_match\|could not be evaluated\|raised mid-decision" "$RG_BASH_OUT"; then
+  echo "  PASS [raising glob_match (bash-guard): over-block message names the failed evaluation]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [raising glob_match (bash-guard): over-block message must name the failed evaluation]"
+  cat "$RG_BASH_OUT" | sed 's/^/    out: /'
+  FAIL=$((FAIL + 1))
+fi
+if grep -qi "glob_match\|could not be evaluated\|raised mid-decision" "$RG_EDIT_OUT"; then
+  echo "  PASS [raising glob_match (edit-guard): over-block message names the failed evaluation]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [raising glob_match (edit-guard): over-block message must name the failed evaluation]"
+  cat "$RG_EDIT_OUT" | sed 's/^/    out: /'
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) load_config raises — SINGLE protected repo (E3): bash load_config call + edits load_config call.
+RAISE_LC_DIR="$TMP_ROOT/raise-loadcfg"
+make_raising_hooks "$RAISE_LC_DIR" load_config
+RAISE_LC_EDIT="$RAISE_LC_DIR/guard-block-main-edits.sh"
+RAISE_LC_BASH="$RAISE_LC_DIR/guard-block-main-bash.sh"
+RLC_EDIT_OUT="$TMP_ROOT/raise-lc-edit.out"
+run_raise_case "$RAISE_LC_EDIT" \
+  "$(edit_payload_content "$RAISE_REPO/src/app.ts" 'x')" \
+  "raising load_config (edit-guard): protected edit → exit 2 (config-load throw over-blocks)" \
+  "$RAISE_REPO" "$RLC_EDIT_OUT"
+RLC_BASH_OUT="$TMP_ROOT/raise-lc-bash.out"
+run_raise_case "$RAISE_LC_BASH" \
+  "$(bash_payload "echo hi > $RAISE_REPO/src/app.ts")" \
+  "raising load_config (bash-guard): protected redirect → exit 2 (config-load throw over-blocks)" \
+  "$RAISE_REPO" "$RLC_BASH_OUT"
+
+# (c) glob_match raises — NESTED fixture (E2/E5): exercises the edits OUTER-UNION seam (B2 proved
+# the silent fall-through) AND the bash strictly-outer match. The inner target is NOT itself in the
+# outer PROTECTED glob, so a HEALTHY lib would ALLOW; only the inverted-default over-block makes it
+# BLOCK — proving the block comes from the raising-helper evaluation, not a real protected match.
+RAISE_INNER="$(make_nested raise-nest 'lib/vendor' 'LINES=50
+FILES=2
+PROTECTED=src/**')"
+RN_EDIT_OUT="$TMP_ROOT/raise-nest-edit.out"
+run_raise_case "$RAISE_EDIT" \
+  "$(edit_payload_content "$RAISE_INNER/evil.ts" 'x')" \
+  "raising glob_match (edit-guard, OUTER-UNION seam): nested target → exit 2 (no silent fall-through)" \
+  "$RAISE_INNER" "$RN_EDIT_OUT"
+RN_BASH_OUT="$TMP_ROOT/raise-nest-bash.out"
+run_raise_case "$RAISE_BASH" \
+  "$(bash_payload "echo hi > $RAISE_INNER/evil.ts")" \
+  "raising glob_match (bash-guard, strictly-outer match): nested redirect → exit 2 (uniform block)" \
+  "$RAISE_INNER" "$RN_BASH_OUT"
+
+# (d) E7/E8: NON-protected target with the raising lib. The evaluation itself threw, so the
+# decision is uncomputable → over-block (exit 2) regardless of whether the path would have
+# matched. Two sub-cases: a repo WITH a PROTECTED list (target not matching it), and a repo with
+# NO protected config at all — both still BLOCK because the throw is in the evaluation region.
+RAISE_OK_REPO="$(make_repo raise-nonmatch 'LINES=50
+FILES=2
+PROTECTED=src/**')"
+RNM_OUT="$TMP_ROOT/raise-nonmatch-bash.out"
+run_raise_case "$RAISE_BASH" \
+  "$(bash_payload "echo hi > $RAISE_OK_REPO/lib/util.ts")" \
+  "raising glob_match + NON-protected target (E7): evaluation threw → exit 2 (uncomputable ≠ allow)" \
+  "$RAISE_OK_REPO" "$RNM_OUT"
+# E8 (documented choice): a repo with NO protected config (empty list). With an EMPTY protected
+# list the match loop never CALLS glob_match — so the broken helper never raises, the protected
+# decision completes honestly as "nothing protected", and the path falls to the BUDGET gate.
+# This is NOT a fail-open: the evaluation did not throw, so there is no exception to over-block.
+# The invariant keys on "evaluation threw", and here it did not. A tiny edit stays under budget
+# → ALLOW; the assertion documents that the broken helper does not change an empty-config repo.
+RAISE_NOPROT_REPO="$(make_repo raise-noprot)"   # no maestro-budget at all → empty protected list
+run_hook_proj "$RAISE_BASH" \
+  "$(bash_payload "echo hi > $RAISE_NOPROT_REPO/src/app.ts")" \
+  0 \
+  "raising glob_match + NO protected config (E8): empty list never calls the helper → no throw → ALLOW" \
+  "$RAISE_NOPROT_REPO"
+
+# (e) E9: repo UNIDENTIFIABLE (target outside ANY git repo) + raising lib → still ALLOW. This is
+# the ONE legitimate fail-open: resolution finds no governing repo, so the evaluation region with
+# the raising helper never runs against a governed list. A /tmp target is outside every repo.
+RAISE_TMP_OUT="$TMP_ROOT/raise-outside.out"
+_otdir="${TMPDIR:-/tmp}"; _otdir="${_otdir%/}"
+run_hook_proj "$RAISE_BASH" \
+  "$(bash_payload "echo hi > ${_otdir}/raise-scratch.ts")" \
+  0 \
+  "raising glob_match + target OUTSIDE any repo (E9): the ONE fail-open stays ALLOW" \
+  "$RAISE_REPO"
+
+# (g) DIFFERENTIAL MATRIX over the FULL evaluation-helper set (round-5: closes the vacuous E6).
+# Round 4's matrix only broke glob_match/load_config, so it never exercised outer_repos or
+# git_toplevel — the two helpers whose BASH cells were the surviving coin-flip (outer_repos→0,
+# git_toplevel→1) the differential matrix below would have caught. For EACH helper we break it,
+# resolve a PROTECTED target on BOTH guards, and assert: (i) both land on exit 2 (over-block),
+# (ii) the two guards AGREE (explicit bash-vs-edits agreement assertion), and (iii) every
+# protected/nested cell feeds RAISE_EXITS so the E6 uniformity collector below sees them.
+#
+# Reachability note (honest, per helper): bash imports git_toplevel/outer_repos/load_config/
+# glob_match; edits imports outer_repos/load_config/glob_match (outer-union) + load_config/
+# glob_match/rel_for (main). The edits guard resolves its own repo via raw `git` (NOT the lib's
+# git_toplevel) and never imports rel_for in a path reached on a protected target — so for
+# git_toplevel/rel_for the EDITS cell still reaches exit 2 via the HONEST protected match
+# (glob_match works), while the BASH cell exercises the inverted default directly. Either way the
+# two guards AGREE on exit 2 for a protected target, which is what the invariant demands.
+RAISE_MATRIX_PROT_REPO="$(make_repo raise-matrix 'LINES=50
+FILES=2
+PROTECTED=src/**')"
+# Nested fixture: inner target NOT in the outer PROTECTED glob, so a HEALTHY lib would ALLOW;
+# only the inverted over-block (or an honest outer match) blocks — isolates the raising helper.
+RAISE_MATRIX_INNER="$(make_nested raise-matrix-nest 'lib/vendor' 'LINES=50
+FILES=2
+PROTECTED=src/**')"
+# No-config repo: empty protected list, so the protected gate short-circuits without calling the
+# matcher and the BUDGET region actually runs — this is the ONLY cell that reaches the edits
+# rel_for call (line ~474). On the pre-round-5 code a raising rel_for here gave edits exit 1.
+RAISE_MATRIX_NOPROT="$(make_repo raise-matrix-noprot)"
+_mtdir="${TMPDIR:-/tmp}"; _mtdir="${_mtdir%/}"
+
+for _helper in glob_match load_config outer_repos git_toplevel rel_for match_segments; do
+  _hd="$TMP_ROOT/raise-matrix-$_helper"
+  make_raising_hooks "$_hd" "$_helper"
+  _hbash="$_hd/guard-block-main-bash.sh"
+  _hedit="$_hd/guard-block-main-edits.sh"
+
+  # --- PROTECTED target on BOTH guards: both must over-block (exit 2). Feeds RAISE_EXITS. ---
+  _po="$TMP_ROOT/rm-$_helper-prot.out"
+  run_raise_case "$_hedit" \
+    "$(edit_payload_content "$RAISE_MATRIX_PROT_REPO/src/app.ts" 'x')" \
+    "raising $_helper (edit-guard): protected src → exit 2" \
+    "$RAISE_MATRIX_PROT_REPO" "$_po"
+  _eedit=2   # run_raise_case PASSes only on exit 2; capture the real exit for the agreement check
+  _eedit=0; printf '%s' "$(edit_payload_content "$RAISE_MATRIX_PROT_REPO/src/app.ts" 'x')" \
+    | CLAUDE_PROJECT_DIR="$RAISE_MATRIX_PROT_REPO" "$_hedit" >/dev/null 2>&1 || _eedit=$?
+  _pbo="$TMP_ROOT/rm-$_helper-prot-bash.out"
+  run_raise_case "$_hbash" \
+    "$(bash_payload "echo hi >> $RAISE_MATRIX_PROT_REPO/src/app.ts")" \
+    "raising $_helper (bash-guard): protected redirect → exit 2" \
+    "$RAISE_MATRIX_PROT_REPO" "$_pbo"
+  _ebash=0; printf '%s' "$(bash_payload "echo hi >> $RAISE_MATRIX_PROT_REPO/src/app.ts")" \
+    | CLAUDE_PROJECT_DIR="$RAISE_MATRIX_PROT_REPO" "$_hbash" >/dev/null 2>&1 || _ebash=$?
+
+  # --- AGREEMENT: the two guards must land on the SAME exit for a protected target (no coin-flip
+  #     between bash and edits). This is the explicit bash-vs-edits agreement assertion per helper. ---
+  if [ "$_ebash" -eq "$_eedit" ]; then
+    echo "  PASS [raising $_helper: bash and edits AGREE on exit $_ebash for a protected target]"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL [raising $_helper: guards DISAGREE — bash=$_ebash edits=$_eedit (the round-4 coin-flip)]"
+    FAIL=$((FAIL + 1))
+  fi
+
+  # --- NESTED target on BOTH guards: both over-block (exit 2). Feeds RAISE_EXITS. ---
+  run_raise_case "$_hedit" \
+    "$(edit_payload_content "$RAISE_MATRIX_INNER/evil.ts" 'x')" \
+    "raising $_helper (edit-guard, outer-union seam): nested → exit 2" \
+    "$RAISE_MATRIX_INNER" "$TMP_ROOT/rm-$_helper-nest-edit.out"
+  run_raise_case "$_hbash" \
+    "$(bash_payload "echo hi >> $RAISE_MATRIX_INNER/evil.ts")" \
+    "raising $_helper (bash-guard, enclosing chain): nested → exit 2" \
+    "$RAISE_MATRIX_INNER" "$TMP_ROOT/rm-$_helper-nest-bash.out"
+
+  # --- OUTSIDE any repo: the invariant draws the line by RETURN-vs-RAISE, not by target class.
+  #     For a MATCHER/CONFIG helper (glob_match, load_config, rel_for, match_segments) and for
+  #     outer_repos, a HEALTHY resolution returns EMPTY for an out-of-repo target, so the broken
+  #     helper is NEVER called against a governed list → the ONE legitimate fail-open holds (exit
+  #     0) on both guards. But git_toplevel IS the resolution helper: a /tmp target makes the bash
+  #     guard call it (benign_target → target_repo → git_toplevel), and a RAISE there is NOT the
+  #     "no repo" signal (that is an EMPTY RETURN) — it is a broken component, so the bash guard
+  #     OVER-blocks (exit 2), uniformly with every other broken-resolution seam. The edits guard
+  #     resolves its repo via raw `git` (not the lib's git_toplevel), so its out-of-repo cell stays
+  #     a clean fail-open (exit 0) — an honest difference (no lib helper to raise), not a coin-flip.
+  #     These cells are the fail-open boundary and are NOT added to RAISE_EXITS. ---
+  if [ "$_helper" = "git_toplevel" ]; then
+    _oo_bash_expect=2   # resolution helper raised → block, uniformly (raise is never the fail-open)
+  else
+    _oo_bash_expect=0   # healthy resolution returns empty → broken helper never reached → ALLOW
+  fi
+  run_hook_proj "$_hedit" \
+    "$(edit_payload_content "${_mtdir}/raise-mx-$_helper.ts" 'x')" \
+    0 \
+    "raising $_helper (edit-guard): target OUTSIDE any repo → ALLOW (edits uses raw git, no lib raise)" \
+    "$RAISE_MATRIX_PROT_REPO"
+  run_hook_proj "$_hbash" \
+    "$(bash_payload "echo hi > ${_mtdir}/raise-mx-$_helper-b.ts")" \
+    "$_oo_bash_expect" \
+    "raising $_helper (bash-guard): target OUTSIDE any repo → exit $_oo_bash_expect (return=fail-open, raise=block)" \
+    "$RAISE_MATRIX_PROT_REPO"
+done
+
+# --- rel_for budget-region cell: a NO-CONFIG repo is the only target that reaches the edits
+#     rel_for call (the protected gate short-circuits on an empty list, so the budget region runs
+#     and calls rel_for at line ~474). On the pre-round-5 code this gave edits exit 1 (ALLOW via
+#     the unwrapped budget heredoc); the wrap makes it exit 2. The bash guard never calls rel_for,
+#     so its honest answer on a no-config tiny edit is exit 0 (allow) — we assert that explicitly,
+#     and that edits now BLOCKS, removing the round-4 disagreement on the rel_for seam. ---
+_rfd="$TMP_ROOT/raise-relfor-budget"
+make_raising_hooks "$_rfd" rel_for
+_rf_edit_out="$TMP_ROOT/raise-relfor-budget-edit.out"
+_rf_eedit=0; printf '%s' "$(edit_payload_content "$RAISE_MATRIX_NOPROT/src/app.ts" 'x')" \
+  | CLAUDE_PROJECT_DIR="$RAISE_MATRIX_NOPROT" "$_rfd/guard-block-main-edits.sh" >"$_rf_edit_out" 2>&1 || _rf_eedit=$?
+if [ "$_rf_eedit" -eq 2 ]; then
+  echo "  PASS [raising rel_for (edit-guard, budget region): no-config repo → exit 2 (wrapped, was exit 1=ALLOW)]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [raising rel_for (edit-guard, budget region): no-config repo expected exit 2 got $_rf_eedit]"
+  cat "$_rf_edit_out" | sed 's/^/    out: /'
+  FAIL=$((FAIL + 1))
+fi
+RAISE_EXITS="$RAISE_EXITS $_rf_eedit"   # feed the rel_for budget cell into the uniformity collector
+_rf_ebash=0; printf '%s' "$(bash_payload "echo hi >> $RAISE_MATRIX_NOPROT/src/app.ts")" \
+  | CLAUDE_PROJECT_DIR="$RAISE_MATRIX_NOPROT" "$_rfd/guard-block-main-bash.sh" >/dev/null 2>&1 || _rf_ebash=$?
+if [ "$_rf_ebash" -eq 0 ]; then
+  echo "  PASS [raising rel_for (bash-guard): no-config tiny edit → exit 0 (bash never calls rel_for; honest allow)]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [raising rel_for (bash-guard): no-config tiny edit expected exit 0 got $_rf_ebash]"
+  FAIL=$((FAIL + 1))
+fi
+
+# --- BITE-PROOF (round-5), the two round-4 survivors: the working-tree round-4 bash guard
+#     ALLOWED a raising outer_repos (→ exit 0, via the resolution try's broad `except: allow()`
+#     that the chain walk sat inside) and a raising git_toplevel (→ exit 1, via an uncaught
+#     traceback out of analyze() → benign_target → target_repo). Both were ALLOW directions.
+#     Reverting the guard mid-suite would mutate source files, so this in-suite bite asserts the
+#     FIXED behavior with a TWO-PART signal that each round-4 failure mode distinctly fails:
+#       (i)  exit 2  — bites outer_repos→0 (broad allow) and git_toplevel→1 (uncaught traceback);
+#       (ii) a CONTROLLED over-block message — outer_repos's round-4 allow() was silent (no
+#            message) and git_toplevel's round-4 traceback is Python's, not ours, so requiring OUR
+#            message bites a half-fix that blocks without routing through the inverted-default path.
+#     The differential-against-round-4 revert (cells flip to 0/1) is run manually and recorded in
+#     the edge-case ledger (section E, round 5), mirroring how rounds 1–4 bite-proofed each fix. ---
+for _bite in outer_repos git_toplevel; do
+  _bd="$TMP_ROOT/raise-bite-$_bite"
+  make_raising_hooks "$_bd" "$_bite"
+  _bo="$TMP_ROOT/raise-bite-$_bite.out"
+  _bx=0; printf '%s' "$(bash_payload "echo hi >> $RAISE_MATRIX_PROT_REPO/src/app.ts")" \
+    | CLAUDE_PROJECT_DIR="$RAISE_MATRIX_PROT_REPO" "$_bd/guard-block-main-bash.sh" >"$_bo" 2>&1 || _bx=$?
+  # The fix is proven by BOTH halves: exit 2 (not the round-4 0/1) AND a controlled over-block
+  # message (the pre-fix code produced none on these seams — allow() is silent, the traceback is
+  # not our message). A revert to round-4 fails exit!=2 here; a half-revert that blocks without
+  # the controlled path fails the naming half.
+  if [ "$_bx" -eq 2 ] && grep -qi "could not be evaluated\|raised mid-decision\|chain walk\|classification" "$_bo"; then
+    echo "  PASS [bite-proof: bash $_bite raise → exit 2 + controlled over-block message (was round-4 $( [ "$_bite" = outer_repos ] && echo 0 || echo 1 )=ALLOW)]"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL [bite-proof: bash $_bite raise → exit $_bx (want 2) with controlled message]"
+    cat "$_bo" | sed 's/^/    out: /'
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# (f) E6 / Petros N4: UNIFORMITY. Every raising-helper protected case above must land on the
+# SAME exit (2) — no 0/1/2 coin-flip across seams. RAISE_EXITS collected each over-block case.
+RAISE_NONUNIFORM=0
+for _e in $RAISE_EXITS; do
+  [ "$_e" -eq 2 ] || RAISE_NONUNIFORM=1
+done
+if [ "$RAISE_NONUNIFORM" -eq 0 ] && [ -n "$RAISE_EXITS" ]; then
+  echo "  PASS [raising-lib UNIFORMITY (N4): every raising-helper protected case exits 2 — no coin-flip]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [raising-lib UNIFORMITY (N4): non-uniform exits across seams ->$RAISE_EXITS]"
+  FAIL=$((FAIL + 1))
+fi
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== unreadable budget: chmod-000 maestro-budget → FAIL CLOSED (BLOCK) on both guards ==="
+# An UNREADABLE budget (file is there but chmod 000 -> PermissionError) used to fail OPEN:
+# load_config returned (50,2,[]) with an EMPTY protected list, so a protected path slipped
+# through. The spine invariant says ambiguity over-blocks — we cannot read the declared
+# policy, so we protect everything. Distinct from an ABSENT budget (no file), which keeps
+# today's legitimate defaults. Skipped under root, which ignores 000 perms (mirrors
+# tests/context-hooks.test.sh:146).
+if [ "$(id -u)" != "0" ]; then
+  UNREAD_REPO="$(make_repo unreadable-budget 'LINES=50
+FILES=2
+PROTECTED=src/**')"
+  chmod 000 "$UNREAD_REPO/.claude/maestro-budget"
+  # src/app.ts is in the (now unreadable) PROTECTED list AND would be blocked by the
+  # fail-closed "**" anyway — either way the answer must be BLOCK, never ALLOW. Capture stderr
+  # too: the over-block message must NAME its cause (the budget is unreadable), so a fail-closed
+  # block self-explains instead of looking like a mysterious protected-path block on a path the
+  # operator never listed. The cause string flows from load_config's fail_closed_reason marker.
+  UNREAD_EDIT_OUT="$TMP_ROOT/unread-edit.out"
+  run_hook_capture_proj "$EDIT_GUARD" \
+    "$(edit_payload_content "$UNREAD_REPO/src/app.ts" 'x')" \
+    2 \
+    "unreadable budget (edit-guard): protected path → BLOCK (fail closed, not fail open)" \
+    "$UNREAD_REPO" \
+    "$UNREAD_EDIT_OUT"
+  if grep -qi "unreadable" "$UNREAD_EDIT_OUT"; then
+    echo "  PASS [unreadable budget (edit-guard): over-block message names the cause (unreadable budget)]"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL [unreadable budget (edit-guard): over-block message must name the cause]"
+    cat "$UNREAD_EDIT_OUT" | sed 's/^/    out: /'
+    FAIL=$((FAIL + 1))
+  fi
+  UNREAD_BASH_OUT="$TMP_ROOT/unread-bash.out"
+  run_hook_capture_proj "$BASH_GUARD" \
+    "$(bash_payload "echo hi > $UNREAD_REPO/src/app.ts")" \
+    2 \
+    "unreadable budget (bash-guard): protected redirect → BLOCK (fail closed, not fail open)" \
+    "$UNREAD_REPO" \
+    "$UNREAD_BASH_OUT"
+  if grep -qi "unreadable" "$UNREAD_BASH_OUT"; then
+    echo "  PASS [unreadable budget (bash-guard): over-block message names the cause (unreadable budget)]"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL [unreadable budget (bash-guard): over-block message must name the cause]"
+    cat "$UNREAD_BASH_OUT" | sed 's/^/    out: /'
+    FAIL=$((FAIL + 1))
+  fi
+  # A path the budget does NOT name must also block under fail-closed (protect everything via
+  # "**"): the operator declared a policy we cannot read, so nothing is exempt. Use a .ts file
+  # under a non-protected dir; .md/docs/tmp carve-outs run BEFORE the budget gate and are out
+  # of scope here, so pick a plain code path.
+  printf 'const x = 1;\n' > "$UNREAD_REPO/extra.ts"
+  run_hook_proj "$EDIT_GUARD" \
+    "$(edit_payload_content "$UNREAD_REPO/extra.ts" 'x')" \
+    2 \
+    "unreadable budget (edit-guard): non-listed code path → BLOCK (fail closed protects all)" \
+    "$UNREAD_REPO"
+  chmod 644 "$UNREAD_REPO/.claude/maestro-budget"  # restore so the trap-rm and any reuse are clean
+else
+  echo "  SKIP [unreadable-budget tests skipped under root (000 perms ignored)]"
+fi
+
+# ---------------------------------------------------------------------------
+echo ""
 echo "=== Summary ==="
 echo "  Passed: $PASS"
 echo "  Failed: $FAIL"

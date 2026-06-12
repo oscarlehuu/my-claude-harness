@@ -156,6 +156,15 @@ by the filesystem root):
   no nesting fix — committing in an inner repo is a commit to THAT repo, governed by its own
   ledger/verify; an inner commit cannot smuggle changes into an outer repo's history.
 
+**One source for the shared guard logic.** Both guards make the same decisions from the same pure
+helpers — protected-config load, glob/segment matching, the repo-root and enclosing-repo walks — so
+those live ONCE in `maestro/hooks/guard_lib.py` (underscore name so it imports as a module; a
+documented exception to the kebab-case rule). Each guard resolves its own real directory and imports
+the lib from beside itself, so it is found in both the repo tree and the deployed `~/.claude/hooks/`
+copy (install.sh copies it alongside the `.sh` hooks). A guard.test.sh assertion fails if any shared
+helper is ever redefined inside a guard again — the divergence that bit us before (an ordering fix
+landed in one copy, not the other) is now a test failure, not a latent bug.
+
 ## Crew management (matches pi)
 
 Verified: pi foreman does NOT live-supervise the developer — it dispatches, the developer runs to

@@ -115,92 +115,69 @@ _canon_proj="${_anchor:-$_session_proj}"
 # through to the normal carve-outs + single-repo gate below (fail-open preserved).
 if [ -n "$_anchor" ] && command -v python3 >/dev/null 2>&1; then
   set +e
-  _outer_repo="$(python3 - "$_check_path" "$_anchor" <<'PY'
-import fnmatch, os, subprocess, sys
+  _outer_repo="$(GUARD_LIB_DIR="$(cd "$(dirname "$_src")" && pwd)" python3 - "$_check_path" "$_anchor" <<'PY'
+import os, sys
+
+sys.path.insert(0, os.environ.get("GUARD_LIB_DIR", os.path.dirname(os.path.abspath(__file__))))
+# ANY failure to load guard_lib.py is a broken safety component, not "git unavailable" —
+# over-block (exit 2). This block previously DISCARDED the python exit code (only stdout was
+# captured), so a load failure fell silently through to the single-repo gate below. We exit 2
+# here and the bash side now reads the exit code; a broken lib in the OUTER-union seam blocks
+# too. Catch the BROAD Exception, not just ImportError: a PRESENT-BUT-CORRUPT lib (truncated
+# mid-copy) raises SyntaxError, which is NOT an ImportError subclass — a narrow except would
+# let it propagate to exit 1, which the seam _outer_exit-eq-2 check never matches, so it would
+# fall through to the single-repo gate (whose own corrupt lib then exits 1 = ALLOW). NOTE: this
+# heredoc body sits inside a $(...) command substitution, so apostrophes in comments here would
+# desync bash quote-tracking — keep this body apostrophe-free.
+try:
+    from guard_lib import outer_repos, load_config, glob_match
+except Exception as _e:
+    sys.stderr.write(
+        "BLOCKED: guard helper library 'guard_lib.py' could not be imported beside this hook "
+        "(%s). Over-blocking to stay safe; re-run install.sh to restore the deployed copy.\n" % _e
+    )
+    sys.exit(2)
 
 target = os.path.realpath(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] else ""
 inner = os.path.realpath(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else ""
 if not target or not inner:
     sys.exit(0)
 
-
-def git_toplevel(d):
-    try:
-        return os.path.realpath(subprocess.check_output(
-            ["git", "-C", d, "rev-parse", "--show-toplevel"],
-            stderr=subprocess.DEVNULL).decode().strip())
-    except Exception:
-        return ""
-
-
-def outer_repos(start):
-    """Enclosing repo roots STRICTLY outside `start`, innermost → outermost (start excluded)."""
-    chain, seen, cur = [], {start}, start
-    while True:
-        parent = os.path.dirname(cur)
-        if not parent or parent == cur:
-            break
-        outer = git_toplevel(parent)
-        if not outer or outer in seen:
-            break
-        seen.add(outer); chain.append(outer); cur = outer
-    return chain
-
-
-def load_protected(repo):
-    out = []
-    try:
-        with open(os.path.join(repo, ".claude", "maestro-budget"), encoding="utf-8") as f:
-            for raw in f:
-                raw = raw.strip()
-                if not raw or raw.startswith("#") or "=" not in raw:
-                    continue
-                k, v = raw.split("=", 1)
-                if k.strip().upper() == "PROTECTED":
-                    out = [p for p in v.strip().split(":") if p]
-    except FileNotFoundError:
-        pass
-    except Exception:
-        return []
-    return out
-
-
-def rel_for(repo, path):
-    try:
-        return os.path.relpath(os.path.realpath(path), repo).replace(os.sep, "/")
-    except Exception:
-        return path.replace(os.sep, "/")
-
-
-def match_segments(psegs, ssegs):
-    if not psegs:
-        return not ssegs
-    head = psegs[0]
-    if head == "**":
-        return match_segments(psegs[1:], ssegs) or (bool(ssegs) and match_segments(psegs, ssegs[1:]))
-    return bool(ssegs) and fnmatch.fnmatchcase(ssegs[0], head) and match_segments(psegs[1:], ssegs[1:])
-
-
-def glob_match(repo, pattern, abs_path):
-    pat = pattern.strip().replace("\\", "/")
-    if not pat:
-        return False
-    if os.path.isabs(pat):
-        subject = os.path.realpath(abs_path).lstrip(os.sep).replace(os.sep, "/")
-        pat = os.path.realpath(pat).lstrip(os.sep).replace(os.sep, "/")
-    else:
-        subject = rel_for(repo, abs_path)
-    return match_segments([p for p in pat.split("/") if p], [p for p in subject.split("/") if p])
-
-
-for repo in outer_repos(inner):
-    if any(glob_match(repo, p, target) for p in load_protected(repo)):
-        print(repo)
-        sys.exit(0)
+# EVALUATION on a RESOLVED target (round-4 inversion). outer_repos / load_config / glob_match
+# can RAISE at call time even from a cleanly-imported but broken lib. The old code left this
+# loop unwrapped, so a raise died with exit 1 — which the bash seam _outer_exit-eq-2 check
+# never matches, so it fell through to the single-repo gate (whose own raise then exited 1 =
+# ALLOW). Per the spine invariant a protected decision we cannot compute is NEVER an allow:
+# catch broadly and exit 2, naming the component. The bash side reads exit 2 and blocks here.
+# NOTE: this heredoc body sits inside a $(...) command substitution, so apostrophes in comments
+# here would desync bash quote-tracking — keep this body apostrophe-free.
+try:
+    for repo in outer_repos(inner):
+        if any(glob_match(repo, p, target) for p in load_config(repo)[2]):
+            print(repo)
+            sys.exit(0)
+except SystemExit:
+    raise
+except Exception as _outer_e:
+    sys.stderr.write(
+        "BLOCKED: the outer-repo protected-path check could not be evaluated for this target "
+        "(%r). Over-blocking to stay safe; the guard helper raised mid-decision.\n" % _outer_e
+    )
+    sys.exit(2)
 sys.exit(0)
 PY
 )"
+  _outer_exit=$?
   set -e
+  # A broken-lib import in the outer-union heredoc exits 2 → block here, BEFORE the normal
+  # single-repo gate (whose own heredoc would also exit 2, but the message would name the
+  # main seam; blocking here keeps the failure attributed to the first seam reached). Any
+  # OTHER nonzero (e.g. a genuine git error inside the block) is left to fall through to the
+  # single-repo gate, preserving today's fail-open for real git-unavailable conditions.
+  if [ "$_outer_exit" -eq 2 ]; then
+    # The heredoc already wrote a stderr line naming guard_lib; just propagate the block.
+    exit 2
+  fi
   if [ -n "$_outer_repo" ]; then
     # Log against the innermost repo (its .claude is the one nearest the target). Size is
     # irrelevant on protected paths, so 0/0 usage in the log is honest here.
@@ -305,8 +282,26 @@ esac
 # Protected-path + budget gate. If git cannot be queried, fail open: tester/reviewer/
 # commit-gate remain backstops, and non-repo directories have no production-risk budget.
 set +e
-python3 - "$_check_path" "$_canon_proj" 3<<<"$input" <<'PY'
-import datetime, fnmatch, json, os, subprocess, sys
+GUARD_LIB_DIR="$(cd "$(dirname "$_src")" && pwd)" python3 - "$_check_path" "$_canon_proj" 3<<<"$input" <<'PY'
+import datetime, json, os, subprocess, sys
+
+sys.path.insert(0, os.environ.get("GUARD_LIB_DIR", os.path.dirname(os.path.abspath(__file__))))
+# ANY failure to load guard_lib.py is a broken safety component, not "git unavailable" —
+# over-block (exit 2), never fall through to this heredoc's final exit 0. An unwrapped
+# exception would exit 1, which the bash wrapper captures into _budget_exit and exits with: per
+# the hook contract any nonzero other than 2 is a non-blocking error → the protected edit slips
+# through. So we catch it and exit 2 (which _budget_exit then propagates), naming the lib for
+# debug. Catch the BROAD Exception, not just ImportError: a PRESENT-BUT-CORRUPT lib (truncated
+# mid-copy) raises SyntaxError, which is NOT an ImportError subclass — a narrow except would let
+# it propagate to exit 1 = ALLOW on a protected edit.
+try:
+    from guard_lib import load_config, glob_match, rel_for
+except Exception as _e:
+    sys.stderr.write(
+        "BLOCKED: guard helper library 'guard_lib.py' could not be imported beside this hook "
+        "(%s). Over-blocking to stay safe; re-run install.sh to restore the deployed copy.\n" % _e
+    )
+    sys.exit(2)
 
 HOOK = "guard-block-main-edits"
 target = os.path.realpath(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] else ""
@@ -320,78 +315,30 @@ except Exception:
 def git(*args):
     return subprocess.check_output(["git", "-C", proj, *args], stderr=subprocess.DEVNULL)
 
+# RESOLUTION — the ONE legitimate fail-open: git unavailable / not a repo → nothing to govern.
+# Everything AFTER this (config load + protected match) is EVALUATION on a RESOLVED target and
+# must over-block, not fall open, when it throws (round-4 inversion; see the protected block).
 try:
     repo = os.path.realpath(git("rev-parse", "--show-toplevel").decode().strip())
 except Exception:
     sys.exit(0)
 
 
-def load_config():
-    lines, files, protected = 50, 2, []
-    path = os.path.join(repo, ".claude", "maestro-budget")
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            for raw in f:
-                raw = raw.strip()
-                if not raw or raw.startswith("#") or "=" not in raw:
-                    continue
-                k, v = raw.split("=", 1)
-                k, v = k.strip().upper(), v.strip()
-                if k == "LINES":
-                    try:
-                        n = int(v)
-                        if n >= 0:
-                            lines = n
-                    except Exception:
-                        lines = 50
-                elif k == "FILES":
-                    try:
-                        n = int(v)
-                        if n >= 0:
-                            files = n
-                    except Exception:
-                        files = 2
-                elif k == "PROTECTED":
-                    protected = [p for p in v.split(":") if p]
-    except FileNotFoundError:
-        pass
-    except Exception:
-        return 50, 2, []
-    return lines, files, protected
-
-max_lines, max_files, protected = load_config()
-
-
-def rel_for(path):
-    try:
-        return os.path.relpath(os.path.realpath(path), repo).replace(os.sep, "/")
-    except Exception:
-        return path.replace(os.sep, "/")
-
-
-def match_segments(psegs, ssegs):
-    if not psegs:
-        return not ssegs
-    head = psegs[0]
-    if head == "**":
-        return match_segments(psegs[1:], ssegs) or (bool(ssegs) and match_segments(psegs, ssegs[1:]))
-    return bool(ssegs) and fnmatch.fnmatchcase(ssegs[0], head) and match_segments(psegs[1:], ssegs[1:])
-
-
-def glob_match(pattern, abs_path):
-    pat = pattern.strip().replace("\\", "/")
-    if not pat:
-        return False
-    if os.path.isabs(pat):
-        subject = os.path.realpath(abs_path).lstrip(os.sep).replace(os.sep, "/")
-        pat = os.path.realpath(pat).lstrip(os.sep).replace(os.sep, "/")
-    else:
-        subject = rel_for(abs_path)
-    return match_segments([p for p in pat.split("/") if p != ""], [p for p in subject.split("/") if p != ""])
+# load_config is EVALUATION (it reads the resolved repo's policy). A raise here is a decision we
+# could not compute → over-block (exit 2), naming the cause. The bash wrapper captures this exit
+# into _budget_exit and propagates it; exit 2 is the only value the contract reads as BLOCK.
+try:
+    max_lines, max_files, protected = load_config(repo)
+except Exception as _cfg_e:
+    sys.stderr.write(
+        "BLOCKED: the protected-path policy could not be loaded for this repo "
+        "(%r). Over-blocking to stay safe; the guard helper raised mid-decision.\n" % _cfg_e
+    )
+    sys.exit(2)
 
 
 def is_protected(path):
-    return any(glob_match(p, path) for p in protected)
+    return any(glob_match(repo, p, path) for p in protected)
 
 
 def is_no_count_rel(rel):
@@ -476,9 +423,27 @@ def write_log(reason, lines_used, files_used):
 # mirrors the strictly-outer union above (which already runs before any HEAD query) and the
 # bash guard's ordering. Size is irrelevant on protected paths → log 0/0, as the outer union
 # does. Budget (below) still fails open when usage is unknowable; protection never does.
-if target and is_protected(target):
+# When the innermost repo's budget was UNREADABLE, load_config failed closed to "**"
+# (protect everything). Surface that cause so the over-block self-explains instead of
+# showing the generic protected-path text for a path the operator never listed.
+_cause = getattr(protected, "fail_closed_reason", "")
+_cause_suffix = (" (%s)" % _cause) if _cause else ""
+# EVALUATION on a RESOLVED target (round-4 inversion). is_protected calls glob_match; if a
+# helper RAISES at call time (clean import, broken body) the protected decision could not be
+# computed. Per the spine invariant that is NEVER an ALLOW: over-block (exit 2), naming the
+# component. The old code left this call unwrapped → a raise propagated to exit 1 = ALLOW (the
+# bash _budget_exit reads any nonzero-but-2 as a non-blocking error and the edit proceeds).
+try:
+    _hit = bool(target) and is_protected(target)
+except Exception as _prot_e:
+    sys.stderr.write(
+        "BLOCKED: the protected-path check could not be evaluated for this target "
+        "(%r). Over-blocking to stay safe; the guard helper raised mid-decision.\n" % _prot_e
+    )
+    sys.exit(2)
+if _hit:
     write_log("protected", 0, 0)
-    sys.stderr.write("BLOCKED: protected path. Size does not matter on protected paths; run maestro for this task.\n")
+    sys.stderr.write("BLOCKED: protected path. Size does not matter on protected paths; run maestro for this task.%s\n" % _cause_suffix)
     sys.exit(2)
 
 try:
@@ -506,7 +471,23 @@ def projected_lines(data):
     return total
 
 proj_lines = projected_lines(payload)
-target_rel = rel_for(target) if target else ""
+# rel_for is a HELPER call, not a git-diff/HEAD query. Budget's legitimate fail-open above
+# (current_usage → exit 0) covers HEAD UNKNOWABILITY — a return-value path, the repo genuinely
+# has no committed state to diff. A rel_for RAISE is a different animal: a broken safety
+# component mid-decision. Per the spine invariant (CTO call: rel_for raising anywhere =
+# evaluation failure = exit 2) it must OVER-block, never fall through to the final exit 0. Round
+# 4 left this unwrapped, so a rel_for raise died with exit 1 — the hook contract reads any
+# nonzero-but-2 as a non-blocking error and the edit PROCEEDS (ALLOW). The bash guard never
+# calls rel_for, so this is the only seam that can reach it; wrapping it here makes both guards
+# agree: a rel_for raise blocks wherever it is reached.
+try:
+    target_rel = rel_for(repo, target) if target else ""
+except Exception as _rel_e:
+    sys.stderr.write(
+        "BLOCKED: the budget file-attribution check could not be evaluated for this target "
+        "(%r). Over-blocking to stay safe; the guard helper raised mid-decision.\n" % _rel_e
+    )
+    sys.exit(2)
 proj_files = 0 if (target_rel and target_rel in changed_files) else (1 if target else 0)
 used_lines = cur_lines + proj_lines
 used_files = len(changed_files) + proj_files
