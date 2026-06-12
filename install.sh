@@ -52,9 +52,25 @@ MANIFEST=()   # every target path we own — recorded in the stamp
 
 # copy_owned: installer-owned namespaces (agents/hooks/skills/maestro). Always replace,
 # whatever is there now — a prior symlink (old layout), a stale copy, or a hand-edit.
+#
+# ATOMIC per target: copy to a temp name in the SAME directory, then `mv -f` into place.
+# `mv` between two paths on one filesystem is a rename(2) — a concurrent reader (a live guard
+# firing mid-deploy) sees either the whole OLD file or the whole NEW one, never a half-written
+# `cp` in progress. The temp is a sibling of the dest so the rename never crosses a filesystem
+# boundary (which would degrade `mv` back into a non-atomic copy). For a directory target
+# (skills/maestro), `mv` onto an EXISTING dir would move the source INTO it rather than replace
+# it, so we `rm -rf` the dest first — directory targets are not read mid-flight by the guards
+# (only the two hooks + guard_lib.py beside them are), so the brief gap there is immaterial.
 copy_owned() { # $1 = source path, $2 = dest path
-  rm -rf "$2"
-  cp -R "$1" "$2"
+  local tmp; tmp="$2.maestro-tmp.$$"
+  rm -rf "$tmp"
+  cp -R "$1" "$tmp"
+  if [ -d "$tmp" ]; then
+    rm -rf "$2"          # mv-onto-existing-dir has move-INTO semantics; clear it first
+    mv -f "$tmp" "$2"
+  else
+    mv -f "$tmp" "$2"    # atomic rename: a reader never observes a partial file
+  fi
   MANIFEST+=("$2")
 }
 
@@ -89,11 +105,17 @@ PY
 
 # crew .md -> agents/ ; hook .sh -> hooks/ ; the whole skill dir -> skills/maestro
 for f in "$ROOT"/maestro/crew/*.md;  do copy_owned "$f" "$DEST/agents/$(basename "$f")"; done
-for f in "$ROOT"/maestro/hooks/*.sh; do copy_owned "$f" "$DEST/hooks/$(basename "$f")"; done
-# Shared python helper for the two guards (imported via sys.path beside the hooks). It is a
-# .py module, not a *.sh hook, so it needs its own copy line to ride along into hooks/ — the
-# guards import it from their own dir in BOTH this repo tree and the deployed copy.
+# DEPLOY ORDER IS LOAD-BEARING: the shared python helper (guard_lib.py) must land BEFORE the
+# *.sh guard hooks that import it. A guard hook is a self-contained safety component the moment
+# its file appears; if a NEW guard were deployed while an OLD/absent guard_lib.py still sat
+# beside it, a live session firing that guard would import a stale-or-missing lib and fail
+# closed (exit 2) — a false block. Copying the lib first means at the instant any new guard
+# becomes live, the new (or at worst the equal prior) lib is already in place. Combined with
+# copy_owned's atomic rename, at NO point during a deploy does a guard fire against a missing or
+# older guard_lib.py. The guards import it from their own dir in BOTH the repo tree and the
+# deployed copy (it is a .py module, not a *.sh hook, so it needs its own copy line).
 for f in "$ROOT"/maestro/hooks/*.py; do [ -e "$f" ] || continue; copy_owned "$f" "$DEST/hooks/$(basename "$f")"; done
+for f in "$ROOT"/maestro/hooks/*.sh; do copy_owned "$f" "$DEST/hooks/$(basename "$f")"; done
 chmod +x "$DEST"/hooks/*.sh 2>/dev/null || true
 copy_owned "$ROOT/maestro" "$DEST/skills/maestro"
 

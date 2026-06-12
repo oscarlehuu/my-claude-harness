@@ -88,6 +88,32 @@ else
   _result fail "happy: guard_lib.py copy is content-equal to source" "content differs"
 fi
 
+# DEPLOY-ORDER PROPERTY: at no instant during a deploy may a live guard fire against a missing
+# or older guard_lib.py. Two mechanisms enforce this and are asserted here:
+#  (1) ORDER — the shared lib (*.py loop) must be copied BEFORE the *.sh guard hooks, so a
+#      newly-live guard always finds the new (or at worst the equal prior) lib beside it.
+#  (2) ATOMICITY — copy_owned must place each target via a temp name + `mv` (rename), never a
+#      bare in-place `cp -R` that a concurrent reader could observe half-written.
+# We assert these by SOURCE INSPECTION of the deployed install.sh, not runtime observation: the
+# window is a sub-second race that a black-box test cannot reliably observe, but the source
+# guarantees are exact and stable. (The happy-path asserts above already prove the lib lands in
+# DEST after a real install; this pins the ORDERING that makes the landing safe mid-deploy.)
+ORDER="$(python3 - "$SRC/install.sh" <<'PY'
+import re, sys
+src = open(sys.argv[1], encoding="utf-8").read()
+# Locate the two copy loops by their glob target.
+py = src.find('maestro/hooks/*.py')
+sh = src.find('maestro/hooks/*.sh; do copy_owned')
+# copy_owned must use a temp + mv (atomic rename), not a bare in-place cp into $2.
+atomic = ('mv -f "$tmp" "$2"' in src) and ('.maestro-tmp.' in src)
+ok = py != -1 and sh != -1 and py < sh and atomic
+print("ok" if ok else "no:py=%d,sh=%d,atomic=%s" % (py, sh, atomic))
+PY
+)"
+[ "$ORDER" = "ok" ] \
+  && _result ok "deploy-order: guard_lib.py (*.py loop) copied before *.sh guards, copy_owned is atomic (temp+mv)" \
+  || _result fail "deploy-order: guard_lib.py (*.py loop) copied before *.sh guards, copy_owned is atomic (temp+mv)" "$ORDER"
+
 # whole skill dir copied (SKILL.md + scripts/ + charter/), not a symlink
 [ ! -L "$DEST/skills/maestro" ] && _result ok "happy: skill dir is a copy not a symlink" \
   || _result fail "happy: skill dir is a copy not a symlink" "skills/maestro is a symlink"
