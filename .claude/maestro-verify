@@ -1,1 +1,1 @@
-bash tests/run-all.sh
+bash tests/run-all.sh && test -d /Users/a1241968/Desktop/Oscar/my-claude/oculus/.git
