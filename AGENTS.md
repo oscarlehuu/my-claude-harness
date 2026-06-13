@@ -119,8 +119,8 @@ then re-dispatch.
 | Maestro | CTO (you) | inherit — the session's model | triage, scope, delegate, run gates, relay Gate 1/2 |
 | Austin | planner | opus[1m] | read-only Gate-1 plan + understanding layer + gate/requirements proposals |
 | Gabriel | scout | sonnet[1m] | fast read-only recon |
-| Faber | developer | fable | backend/logic + tests, on disk |
-| Lucia | ui-developer | fable | frontend/UI with taste |
+| Faber | developer | opus[1m] | backend/logic + tests, on disk |
+| Lucia | ui-developer | opus[1m] | frontend/UI with taste |
 | Thomas | tester | opus[1m] | judge intent, catch cheats (adversarial), read-only |
 | Petros | reviewer | opus[1m] | pre-ship ship-risk review (adversarial), read-only |
 

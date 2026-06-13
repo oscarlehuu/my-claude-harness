@@ -2,7 +2,7 @@
 name: ui-developer
 description: Frontend/UI-UX implementation specialist. Owns the visual layer — components, styling, layout, interaction, accessibility — with taste. Full tools. Same machine contract as the developer; the orchestrator routes here on the 'frontend' track.
 tools: Read, Write, Edit, Bash, Grep, Glob
-model: fable
+model: opus[1m]
 memory: project
 ---
 
