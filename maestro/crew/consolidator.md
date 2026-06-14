@@ -39,8 +39,18 @@ is OFF. If `.claude/maestro/distill-off` exists, do nothing and say so — you a
 | Subject of the learning | Route | How | Eagerness |
 |---|---|---|---|
 | about THIS repo/project | repo | `learned-write.sh section <project-AGENTS.md> "<heading>" "<bullet>"` | **single-shot** — write on first occurrence (easily reverted) |
-| about the company | company | `learned-write.sh inbox company "<text>"` | proposed only on **recurrence ≥ 2** (the writer counts; a one-off is recorded, not queued) |
-| about the human (the founder) | human | `learned-write.sh inbox human "<text>"` | proposed only on **recurrence ≥ 2** (same) |
+| about the company | company | `learned-write.sh inbox company "<text>"` | proposed only on **recurrence ≥ 2** (the writer counts; a one-off is recorded, not queued) — UNLESS manual mode (below) |
+| about the human (the founder) | human | `learned-write.sh inbox human "<text>"` | proposed only on **recurrence ≥ 2** (same) — UNLESS manual mode (below) |
+
+**Manual mode (`/maestro learn` pull only).** When the CTO spawns you via the founder-invoked
+`/maestro learn` flow, set `MAESTRO_LEARN_MANUAL=1` on the inbox calls
+(`MAESTRO_LEARN_MANUAL=1 learned-write.sh inbox <company|human> "<text>"`). A founder-invoked pull is
+an explicit request to learn NOW, so first-occurrence human/company candidates are proposed to the
+inbox immediately (recurrence bar = 1). On the AUTOMATIC paths — the cadence and task-close triggers
+— you must NOT set this var: those keep the ≥2 anti-spam default. The CTO tells you which trigger
+spawned you; manual is the explicit opt-in, auto is the safe default. The tally still increments by 1
+either way (manual changes only WHEN a call proposes, not the persisted count). Repo-fact routing is
+single-shot regardless of trigger and is unaffected by this signal.
 
 - **Repo** learnings auto-write to the project's own `AGENTS.md`, into one of its two owned sections:
   `## Learned — conventions` (how this repo wants work done) and `## Learned — gotchas` (traps/quirks
@@ -48,9 +58,11 @@ is OFF. If `.claude/maestro/distill-off` exists, do nothing and say so — you a
 - **Company / human** learnings are NEVER auto-written to `conventions.md`, `me.md`, the contract
   prose, `charter/`, `rules/`, or the global `~/.claude/AGENTS.md` — the denylist REFUSES those
   targets deterministically. They queue in `.claude/maestro/learnings-inbox.md` for the founder-gated
-  flow (machine proposes, founder nods, the CTO writes the line BY HAND). The recurrence gate keeps
-  the inbox from filling with single-shot noise — call the writer for every occurrence; it records
-  the count and queues only at the 2nd near-duplicate.
+  flow (machine proposes, founder nods, the CTO writes the line BY HAND). On the AUTOMATIC paths the
+  recurrence gate keeps the inbox from filling with single-shot noise — call the writer for every
+  occurrence; it records the count and queues only at the 2nd near-duplicate. On the MANUAL
+  `/maestro learn` pull, set `MAESTRO_LEARN_MANUAL=1` so a first-occurrence candidate is queued
+  immediately (see "Manual mode" above).
 
 4. **Stamp / advance the watermarks.** When done:
    - the conversation channel: `task-distill.sh advance <transcript-path> <conversation_id>` so the

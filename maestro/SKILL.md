@@ -28,7 +28,7 @@ JSON is only ever written by these scripts — never hand-write ledger files.
 | `task-status.sh [slug]` | render the tier-aware DoD checklist, exit 0/1 | the Gate-2 checklist is rendered **by code, not discipline** |
 | `task-report.sh [repo]` | per-task breakdown (tier, rounds, verify time, verdicts) + guard-block friction analysis | tune budgets and tier rules from **measured** usage, not vibes |
 | `task-distill.sh <mark-due\|status\|advance\|due-since> [conv_id]` | the continual-learning index: per-conversation watermark map (keyed by conversation_id so parallel lanes don't clobber), mark slugs due, advance only on NEW input; no-ops under `distill-off` | the incremental + per-lane contract is **code**, so the same delta is never re-mined and concurrent conversations stay isolated |
-| `learned-write.sh <section\|inbox> ...` | the ONLY writer of consolidated learnings: append a bullet to an owned `## Learned ...` section (dedup + cap 12, prose untouched, secrets scrubbed, repo single-shot) or queue a routed inbox proposal (secrets scrubbed, me.md/conventions only on recurrence ≥2) | the safety invariants are **bash, not LLM discretion** |
+| `learned-write.sh <section\|inbox> ...` | the ONLY writer of consolidated learnings: append a bullet to an owned `## Learned ...` section (dedup + cap 12, prose untouched, secrets scrubbed, repo single-shot) or queue a routed inbox proposal (secrets scrubbed, me.md/conventions only on recurrence ≥2 — or first occurrence with `MAESTRO_LEARN_MANUAL=1` on a manual `/maestro learn` pull) | the safety invariants are **bash, not LLM discretion** |
 | `queue-add.sh "<title>"` | drop a task into the HQ queue (one JSON file per task) | the founder's inbox is files, so any trigger can write it |
 | `team-board.sh [--write]` | render the cross-repo standup board from HQ queue + every registered repo's ledgers | the chief-of-staff's opening ritual; Oculus reads the same files |
 
@@ -230,7 +230,12 @@ switch):
    completed turns ≥ N **and** minutes-since-last-distill ≥ M **and** the transcript advanced past
    THIS conversation's watermark (defaults N=10, M=20; `MAESTRO_DISTILL_TURNS`/`MAESTRO_DISTILL_MINUTES`
    override), it marks a distill due and emits a non-blocking nudge. The cadence NEVER blocks a turn.
-3. **Manual** — `/maestro learn`: run `task-distill.sh status`, then spawn the consolidator now.
+3. **Manual** — `/maestro learn`: run `task-distill.sh status`, then spawn the consolidator now,
+   telling it this is the manual pull so it sets `MAESTRO_LEARN_MANUAL=1` on its inbox calls.
+   A founder-invoked pull is an explicit request to learn NOW, so company/human candidates propose on
+   **first occurrence** (recurrence bar = 1) instead of waiting for a near-duplicate. The automatic
+   cadence/task-close triggers keep the ≥2 anti-spam default — auto is the safe default, manual the
+   explicit opt-in.
 
 **Kill switch.** A visible marker `.claude/maestro/distill-off` (mirror `registry-nudge-off`:
 `touch .claude/maestro/distill-off`; re-enable with `rm`) suppresses ALL triggers — task-close
@@ -250,14 +255,16 @@ secrets, and routes each:
 | Subject | Gate | Eagerness | Lands in |
 |---|---|---|---|
 | about THIS repo | autonomous | **single-shot** (first occurrence) | the project AGENTS.md's owned sections `## Learned — conventions` / `## Learned — gotchas` |
-| about the company | **founder nods** | **recurrence ≥2** | `.claude/maestro/learnings-inbox.md` (proposal — never auto-written to `conventions.md`) |
-| about the human | **founder approves wording** | **recurrence ≥2** | `.claude/maestro/learnings-inbox.md` (proposal — never auto-written to `me.md`) |
+| about the company | **founder nods** | **recurrence ≥2** auto · **first occurrence** on manual `/maestro learn` | `.claude/maestro/learnings-inbox.md` (proposal — never auto-written to `conventions.md`) |
+| about the human | **founder approves wording** | **recurrence ≥2** auto · **first occurrence** on manual `/maestro learn` | `.claude/maestro/learnings-inbox.md` (proposal — never auto-written to `me.md`) |
 
 **The safety invariants are code, not trust.** All writes go through `learned-write.sh`, which: writes
 only into a heading matching `## Learned ...`, leaves every byte outside that section identical, dedups
 by normalized text, caps each section at 12, **scrubs secrets** (drops credential-shaped learnings
 before any sink), and gates me.md/conventions candidates behind **recurrence** (records every
-occurrence, queues only at the 2nd near-duplicate). Company/human routes only ever append to the inbox
+occurrence, queues only at the 2nd near-duplicate on the automatic path; on a manual `/maestro learn`
+pull, `MAESTRO_LEARN_MANUAL=1` drops the propose-threshold to 1 so a first-occurrence candidate is
+queued immediately — the tally still increments by 1, only WHEN it proposes changes). Company/human routes only ever append to the inbox
 — they cannot touch `conventions.md`, `me.md`, the contract prose, `charter/`, `rules/`, or the global
 `~/.claude/AGENTS.md`. **Inbox lifecycle:** the inbox holds proposals → the founder nods → the CTO
 writes the me.md/conventions line BY HAND. The denylist's refusal to auto-write those files IS the

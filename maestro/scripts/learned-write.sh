@@ -17,10 +17,16 @@
 #       Append a routed, founder-gated proposal to .claude/maestro/learnings-inbox.md.
 #       Company/human learnings NEVER auto-write conventions.md / me.md / the contract —
 #       they queue here for the machine-proposes / founder-nods flow.
-#       RECURRENCE: a me.md/conventions candidate is only QUEUED once a near-duplicate has been
-#       seen >= 2 times (learned_recurrence.py) — a one-off observation is recorded but not
-#       proposed, so the inbox does not fill with single-shot noise. The exit code is still 0
-#       (the call succeeded); it just prints "recorded (seen N) — below threshold, not queued".
+#       RECURRENCE: by default a me.md/conventions candidate is only QUEUED once a near-duplicate
+#       has been seen >= 2 times (learned_recurrence.py) — a one-off observation is recorded but
+#       not proposed, so the inbox does not fill with single-shot noise on the AUTOMATIC cadence/
+#       task-close path. The exit code is still 0 (the call succeeded); it just prints
+#       "recorded (seen N) — below threshold, not queued".
+#       MANUAL MODE: with MAESTRO_LEARN_MANUAL=1 (the founder-invoked `/maestro learn` pull, an
+#       explicit request to learn NOW) the propose-threshold drops to 1 — a first-occurrence
+#       candidate is queued immediately. The tally still increments by 1 either way; only WHEN
+#       this call proposes changes. The consolidator passes this signal ONLY on the manual path,
+#       never on the cadence/task-close path, so auto stays the safe ≥2 default.
 #
 # BOTH sinks run a deterministic secrets/PII scrub (learned_scrub.py) FIRST: a learning that
 # looks like it carries a credential is DROPPED before any write (exit non-zero, nothing written).
@@ -185,15 +191,23 @@ if not text:
 # Secrets scrub before anything else — a credential-shaped proposal never even gets counted.
 sys.path.insert(0, os.environ["MAESTRO_SCRIPT_DIR"])
 from learned_scrub import is_secret_like  # noqa: E402
-from learned_recurrence import record_and_count, THRESHOLD  # noqa: E402
+from learned_recurrence import record_and_count, propose_threshold  # noqa: E402
 
 if is_secret_like(text):
     sys.exit("refusing to queue a proposal that looks like it contains a secret/credential")
 
+# Manual signal: a founder-invoked `/maestro learn` pull is an explicit request to learn now, so a
+# first-occurrence candidate should reach the inbox immediately. Only the exact value "1" enables it
+# (an empty/unset/other value keeps the safe ≥2 auto default — an accidental empty export can't flip
+# the cadence path). The empty-text and secrets guards above run FIRST regardless of mode.
+manual = os.environ.get("MAESTRO_LEARN_MANUAL") == "1"
+threshold = propose_threshold(manual)
+
 # Recurrence gate: me.md/conventions candidates are only proposed once a near-duplicate has
-# recurred. Record this occurrence; below the threshold we record but do NOT queue (anti-spam).
+# recurred (auto) — or on first occurrence in manual mode. Record this occurrence (the tally always
+# increments by 1); below the threshold we record but do NOT queue (anti-spam on the auto path).
 count = record_and_count(seen, route, text)
-if count < THRESHOLD:
+if count < threshold:
     print(f"recorded {route} learning (seen {count}) — below recurrence threshold, not queued")
     sys.exit(0)
 

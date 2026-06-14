@@ -14,6 +14,19 @@ import os
 import re
 
 THRESHOLD = 2  # propose to the inbox only on the 2nd (or later) near-duplicate occurrence
+MANUAL_THRESHOLD = 1  # a founder-invoked `/maestro learn` pull is an explicit request to learn NOW
+
+
+def propose_threshold(manual=False):
+    """The propose-threshold for THIS call: 1 when manual, the ≥2 anti-spam default otherwise.
+
+    Manual mode is the explicit founder opt-in (`/maestro learn` pull) — when the founder asks to
+    learn now, a first-occurrence human/company candidate should reach the inbox immediately rather
+    than waiting for a near-duplicate. The automatic cadence/task-close path passes manual=False, so
+    the ≥2 anti-spam gate is unchanged and auto remains the safe default. This only changes WHEN a
+    call proposes; the persisted tally (record_and_count) still increments by 1 either way.
+    """
+    return MANUAL_THRESHOLD if manual else THRESHOLD
 
 
 def norm(text):

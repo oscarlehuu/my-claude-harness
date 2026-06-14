@@ -592,6 +592,49 @@ hcount_after="$(grep -c '^- \[human\]' .claude/maestro/learnings-inbox.md)"
 [ "$hcount_before" = "$hcount_after" ] && _result ok "test_me_md_conventions_require_recurrence: 3rd occurrence does not duplicate the inbox line" \
   || _result fail "test_me_md_conventions_require_recurrence: 3rd occurrence does not duplicate the inbox line" "human lines $hcount_before -> $hcount_after"
 
+# === test_inbox_manual_proposes_first_occurrence ===============================
+# A founder-invoked `/maestro learn` pull is an explicit request to learn NOW: with
+# MAESTRO_LEARN_MANUAL=1 a FIRST-occurrence human/company candidate IS queued immediately (the
+# recurrence bar drops to 1), instead of being merely recorded until a 2nd near-duplicate.
+rm -f .claude/maestro/learnings-inbox.md .claude/maestro/learnings-seen.json
+man_h="$(MAESTRO_LEARN_MANUAL=1 "$WRITE" inbox human "the founder reviews demos on friday afternoons")"
+assert_contains "$man_h" "queued" "test_inbox_manual_proposes_first_occurrence: 1st human queued under manual signal"
+assert_file_exists .claude/maestro/learnings-inbox.md "test_inbox_manual_proposes_first_occurrence: inbox created on the first manual occurrence"
+assert_contains "$(cat .claude/maestro/learnings-inbox.md)" "[human]" "test_inbox_manual_proposes_first_occurrence: queued as a human proposal"
+assert_contains "$(cat .claude/maestro/learnings-inbox.md)" "reviews demos on friday" "test_inbox_manual_proposes_first_occurrence: human text present"
+# A company candidate, also first-occurrence, is queued immediately under the manual signal too.
+man_c="$(MAESTRO_LEARN_MANUAL=1 "$WRITE" inbox company "deploys run only from a clean green tree")"
+assert_contains "$man_c" "queued" "test_inbox_manual_proposes_first_occurrence: 1st company queued under manual signal"
+assert_contains "$(cat .claude/maestro/learnings-inbox.md)" "[company]" "test_inbox_manual_proposes_first_occurrence: company proposal queued"
+assert_contains "$(cat .claude/maestro/learnings-inbox.md)" "clean green tree" "test_inbox_manual_proposes_first_occurrence: company text present"
+# Manual changes only WHEN it proposes, not the tally semantics: the occurrence was still counted
+# (seen-tally key exists for this learning), so a later AUTO call sees count>=2.
+manual_counted="$(python3 - .claude/maestro/learnings-seen.json <<'PY'
+import json, sys
+tally = json.load(open(sys.argv[1]))
+print("yes" if any("reviews demos on friday" in k for k in tally) else "no")
+PY
+)"
+assert_contains "$manual_counted" "yes" "test_inbox_manual_proposes_first_occurrence: manual occurrence still increments the persisted tally"
+
+# === test_inbox_auto_keeps_recurrence ==========================================
+# WITHOUT the manual signal (the automatic cadence/task-close path), a first-occurrence learning is
+# NOT queued (anti-spam ≥2 default unchanged); the 2nd near-duplicate IS queued. A value other than
+# the exact "1" must NOT enable manual mode — an accidental empty/other export can't flip the default.
+rm -f .claude/maestro/learnings-inbox.md .claude/maestro/learnings-seen.json
+auto1="$("$WRITE" inbox company "the queue flow is machine-proposes founder-nods cto-writes")"
+assert_contains "$auto1" "below recurrence threshold" "test_inbox_auto_keeps_recurrence: 1st occurrence recorded, not queued (auto default)"
+assert_file_absent .claude/maestro/learnings-inbox.md "test_inbox_auto_keeps_recurrence: inbox not created on a single auto occurrence"
+# A non-"1" value for the env var is still the auto path (default-safe).
+auto1b="$(MAESTRO_LEARN_MANUAL=0 "$WRITE" inbox human "an unrelated human note seen once under value 0")"
+assert_contains "$auto1b" "below recurrence threshold" "test_inbox_auto_keeps_recurrence: MAESTRO_LEARN_MANUAL=0 does not enable manual mode"
+assert_file_absent .claude/maestro/learnings-inbox.md "test_inbox_auto_keeps_recurrence: a non-1 signal value queues nothing on first occurrence"
+# 2nd near-duplicate (whitespace/case variant) of the company learning crosses ≥2 -> queued.
+auto2="$("$WRITE" inbox company "  THE queue flow is MACHINE-proposes founder-nods cto-writes.  ")"
+assert_contains "$auto2" "queued" "test_inbox_auto_keeps_recurrence: 2nd near-duplicate is queued (recurrence met)"
+assert_file_exists .claude/maestro/learnings-inbox.md "test_inbox_auto_keeps_recurrence: inbox created on the 2nd auto occurrence"
+assert_contains "$(cat .claude/maestro/learnings-inbox.md)" "[company]" "test_inbox_auto_keeps_recurrence: queued as a company proposal"
+
 # === test_repo_fact_single_shot ================================================
 # A repo fact is written to a project AGENTS.md `## Learned` section on its FIRST occurrence —
 # no recurrence gate (single-shot, easily reverted). Uses a plain markerless AGENTS.md.
