@@ -100,4 +100,15 @@ sys.exit(2)
 PY
 _exit=$?
 set -e
+
+# Continual-learning cadence — trigger #2. Runs ONLY on the non-blocking pass path, after the
+# DoD decision, fire-and-forget: it can mark a distill due + nudge but NEVER changes this hook's
+# exit code (the cadence hook self-guards to exit 0, and we ignore its result regardless). The
+# block path (exit 2) is left completely untouched. We replay the captured stdin so the cadence
+# hook sees the same transcript_path/stop_hook_active payload this hook received.
+if [ "$_exit" = 0 ]; then
+  _cad="$(cd "$(dirname "$_src")" && pwd)/distill-cadence.sh"
+  [ -f "$_cad" ] && printf '%s' "$input" | bash "$_cad" >/dev/null 2>&1 || true
+fi
+
 exit "$_exit"

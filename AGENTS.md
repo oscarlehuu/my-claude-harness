@@ -29,8 +29,8 @@ CLAUDE.md            pointer only (imports @AGENTS.md for Claude Code) — never
 maestro/             the harness domain — everything that runs
   SKILL.md             the operative protocol (/maestro): tier playbooks, blind mode
   crew/                the team: planner · scout · developer · ui-developer · tester · reviewer
-  hooks/               guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
-  scripts/             task-init · task-verify · task-record · task-status · task-report · queue-add · team-board · registry-add
+  hooks/               guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · distill-cadence · crew-context · maestro-engage
+  scripts/             task-init · task-verify · task-record · task-status · task-report · task-distill · learned-write · queue-add · team-board · registry-add
   charter/             gate-pipeline.md · definition-of-done.md · retro-loop.md
 hq/                  the office deployment kit — templates/AGENTS.md · bootstrap.sh (a live HQ is a separate private repo)
 rules/               the founder's global engineering rules — install.sh deploys them to .claude/rules
@@ -123,6 +123,7 @@ then re-dispatch.
 | Lucia | ui-developer | opus[1m] | frontend/UI with taste |
 | Thomas | tester | opus[1m] | judge intent, catch cheats (adversarial), read-only |
 | Petros | reviewer | opus[1m] | pre-ship ship-risk review (adversarial), read-only |
+| Remy | consolidator | sonnet[1m] | continual-learning consolidation step: gather warm lessons + the conversation delta, dedup/scrub/route/stamp (read-mostly) |
 
 The crew have names, voices, and **persistent per-repo memory** (`memory: project` — each maintains
 a MEMORY.md of what it learned about the repo). Address and report them by name; they sign their
@@ -148,6 +149,21 @@ yourself.
   Maestro's project memory (autonomous); about the company → HQ `conventions.md` (founder nods);
   about the human → `~/.claude/me.md` (founder approves the wording — it is injected everywhere).
   When `me.md` reaches its 60-line cap: distill first, split a pointer-linked overflow file second,
-  never raise the cap by default.
+  never raise the cap by default. Continual learning is a **PROCESS woven through the pipeline**, not
+  one agent's job: the crew (developer/tester/reviewer/planner) emit DURABLE lessons WARM as a
+  byproduct of their structured output; the CTO records each as a `task-record.sh lesson` event (the
+  SAME store the retro loop reads — one store, not two). On task-close, a stop-dod cadence, or manual
+  `/maestro learn`, a distill is marked due and the CTO spawns the **consolidator** (Remy) — a lean
+  STEP, not a transcript-mining personality. It folds the warm lessons + the conversation delta since
+  the watermark, then routes via `learned-write.sh`: repo facts auto-write **single-shot** to a
+  project AGENTS.md's two owned sections (`## Learned — conventions`, `## Learned — gotchas`);
+  company/human candidates QUEUE in `.claude/maestro/learnings-inbox.md` for the founder-gated flow
+  only after a near-duplicate has **recurred (≥2)** — never auto-written to `conventions.md`/`me.md`/
+  the contract (the denylist enforces this; that refusal IS "machine proposes, founder nods", and the
+  inbox proposal is just a queue the CTO drains by hand). `## Learned` writes are uncommitted diffs —
+  the user commits, never an auto-commit step. This repo's own AGENTS.md is the deployed contract and
+  is EXEMPT from auto-write — it carries no `## Learned` sections. The kill switch
+  `.claude/maestro/distill-off` (mirror `registry-nudge-off`) suppresses ALL triggers and no-ops the
+  consolidator.
 - Reference manual: `maestro/SKILL.md` (operative protocol) and `maestro/charter/` (gate
   pipeline + Definition of Done).

@@ -75,6 +75,15 @@ Assumptions, anything the tester/CTO should know, and a pointer to your **edge-c
 and why. Summarize the ledger here; the artifact is the kept-current source of truth. The tester will
 judge you against that list — a missing, empty, or stale ledger is itself a FAIL signal.
 
+## Lessons
+Durable learnings you discovered WHILE doing this work — emitted warm, as a byproduct, because you
+lived the moment and a cold miner later would not. Keep ONLY what will still be true and useful on
+the next unrelated task: a repo convention earned the hard way, a build quirk, a recurring edge case,
+a non-obvious invariant, a mistake worth not repeating (pair a defect with its suspected component).
+One line each, the rule + the WHY, no plan/finding labels. "none" is a fine answer — DROP this task's
+transient noise. The CTO records each as a `task-record.sh lesson` event (the retro loop's single
+store); the consolidator later routes them. Do not write any memory file yourself for this.
+
 ## MACHINE BLOCK (end your response with this exact block)
 ---DEV-JSON---
 {

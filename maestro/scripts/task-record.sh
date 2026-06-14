@@ -12,7 +12,13 @@
 #   round_started                        bump the round counter (fix loop)
 #   gate2_approved                       founder approved ship
 #   task_done | escalated                close the task, clear the active pointer
+#   consolidated                         the continual-learning consolidator finished this task
+#   lesson           summary="..."       a warm learning (defect + suspected component) for retro
 #   note             text="..."          freeform breadcrumb
+#
+# `lesson` is logged like any other event (event=="lesson" in log.jsonl) — it is the SINGLE
+# learning store the retro loop reads. Warm lessons emitted by the crew are recorded here, not in
+# any parallel file.
 set -eu
 
 root="${CLAUDE_PROJECT_DIR:-$PWD}"
@@ -76,6 +82,11 @@ elif event == "round_started":
 elif event in {"task_done", "escalated"}:
     state["state"] = "done" if event == "task_done" else "escalated"
     closing = True
+elif event == "consolidated":
+    # The continual-learning consolidator finished this task's warm channel. The flag lives in the
+    # task's own state.json (not distill-state.json) so it is task-scoped and auto-cleaned with the
+    # dir. Idempotent: setting it twice is a no-op; the log.jsonl event is the audit trail.
+    state["consolidated"] = True
 
 state["updatedAt"] = ts
 tmp = f"{state_path}.{os.getpid()}.tmp"
@@ -96,3 +107,14 @@ if closing:
 
 print(f"recorded {event} on '{slug}'" + (f" (tier now {state['tier']})" if event == "tier_escalated" else ""))
 PY
+
+# Trigger #1 of the continual-learning loop: a closing task marks itself due for consolidation.
+# We use the script's own $slug (NOT the just-cleared `active` pointer) so the closed task is the
+# one marked. Strictly fail-silent: a distill-marking error must NEVER fail the task close — the
+# `|| true` and the script's own atomic/fail-open writes guarantee the close already succeeded above.
+# The kill switch (distill-off) is honored inside task-distill.sh mark-due, so a suppressed trigger
+# is a clean no-op here too.
+if [ "$event" = "task_done" ] || [ "$event" = "escalated" ]; then
+  _distill="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/task-distill.sh"
+  [ -f "$_distill" ] && bash "$_distill" mark-due "$slug" "$event" >/dev/null 2>&1 || true
+fi

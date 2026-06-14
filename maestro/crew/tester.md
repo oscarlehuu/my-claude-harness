@@ -86,3 +86,11 @@ OUTPUT CONTRACT (one token, on its own line):
   VERDICT: BLOCKED     (cannot verify — no test, broken env)
 
 Then give your evidence and, if FAIL, the exact fixes the developer should make.
+
+## Lessons
+After the verdict, emit a short list of DURABLE learnings this judging surfaced — warm, as a
+byproduct, because the recurring cheat or missed edge case you just caught is exactly what should not
+bite again. Keep only what will still be true on the next unrelated task: a recurring cheat pattern, a
+gotcha the test suite missed, a defect class worth pairing with its suspected component. One line each
+(rule + WHY), no plan/finding labels; "none" is fine. The CTO records each as a `task-record.sh lesson`
+event (the retro loop's single store) — you write no memory file for this.

@@ -27,6 +27,8 @@ JSON is only ever written by these scripts — never hand-write ledger files.
 | `task-record.sh <event> [k=v ...]` | record verdicts/gates/escalations; mirrors latest into `state.json` | hooks read it; tier ratchet refuses downgrades |
 | `task-status.sh [slug]` | render the tier-aware DoD checklist, exit 0/1 | the Gate-2 checklist is rendered **by code, not discipline** |
 | `task-report.sh [repo]` | per-task breakdown (tier, rounds, verify time, verdicts) + guard-block friction analysis | tune budgets and tier rules from **measured** usage, not vibes |
+| `task-distill.sh <mark-due\|status\|advance\|due-since> [conv_id]` | the continual-learning index: per-conversation watermark map (keyed by conversation_id so parallel lanes don't clobber), mark slugs due, advance only on NEW input; no-ops under `distill-off` | the incremental + per-lane contract is **code**, so the same delta is never re-mined and concurrent conversations stay isolated |
+| `learned-write.sh <section\|inbox> ...` | the ONLY writer of consolidated learnings: append a bullet to an owned `## Learned ...` section (dedup + cap 12, prose untouched, secrets scrubbed, repo single-shot) or queue a routed inbox proposal (secrets scrubbed, me.md/conventions only on recurrence ≥2) | the safety invariants are **bash, not LLM discretion** |
 | `queue-add.sh "<title>"` | drop a task into the HQ queue (one JSON file per task) | the founder's inbox is files, so any trigger can write it |
 | `team-board.sh [--write]` | render the cross-repo standup board from HQ queue + every registered repo's ledgers | the chief-of-staff's opening ritual; Oculus reads the same files |
 
@@ -205,6 +207,66 @@ did, that's usually a sign to escalate the tier instead.
 
 Close every task: `task-record.sh task_done` (or `escalated`).
 
+## Continual learning (a PROCESS, not one agent — automatic, gated)
+
+Maestro learns from its own runs without you hand-curating every lesson. Learning is **woven through
+the pipeline**: roles emit lessons WARM, a deterministic index marks work due, a lean CONSOLIDATOR
+step folds + routes them, and the guarded writer writes. It feeds the lesson routing (`AGENTS.md`
+working rule) and the retro loop (`charter/retro-loop.md`) — it does **not** replace the retro, which
+still root-causes defects. There is **one learning store**, the ledger `lesson` events.
+
+**Warm emit (the source of truth).** The developer, tester, reviewer, and planner each end their
+structured output with a short **Lessons** section: durable learnings they discovered in the moment
+(a defect + suspected component, a recurring correction, a gotcha that would bite again). The CTO
+records each as `task-record.sh lesson summary="<what> + <suspected component>"` — the SAME events the
+retro loop reads. No parallel store. An agent who lived the moment is better-informed than a cold
+miner, which is why the warm channel leads and the conversation delta only fills the gaps.
+
+**Three triggers** (all converge on the deterministic index, `task-distill.sh`; all honor the kill
+switch):
+1. **Task-close** — `task-record.sh task_done|escalated` marks the closed slug due (fail-silent: a
+   marking error never fails the close).
+2. **Cadence** — `stop-dod` invokes `distill-cadence.sh` on its non-blocking pass path; when
+   completed turns ≥ N **and** minutes-since-last-distill ≥ M **and** the transcript advanced past
+   THIS conversation's watermark (defaults N=10, M=20; `MAESTRO_DISTILL_TURNS`/`MAESTRO_DISTILL_MINUTES`
+   override), it marks a distill due and emits a non-blocking nudge. The cadence NEVER blocks a turn.
+3. **Manual** — `/maestro learn`: run `task-distill.sh status`, then spawn the consolidator now.
+
+**Kill switch.** A visible marker `.claude/maestro/distill-off` (mirror `registry-nudge-off`:
+`touch .claude/maestro/distill-off`; re-enable with `rm`) suppresses ALL triggers — task-close
+marking and the cadence — and makes `due-since` report nothing due, so the consolidator no-ops.
+
+**Two watermarks, split by scope.**
+- `distill-state.json` holds the **conversation** watermark as a map keyed by `conversation_id`, so a
+  repo running 2-3 parallel lanes never has one conversation clobber another's progress.
+- the per-task **consolidated** flag lives in `<slug>/state.json` (`task-record.sh consolidated`), so
+  it is task-scoped and auto-cleaned with the task dir — the warm channel needs no separate tracking.
+
+**When a distill is due** (`task-distill.sh due-since` exits 0 and `distill-off` absent), spawn the
+`consolidator`. It folds the due slugs' warm `lesson` events + the transcript delta past the
+conversation watermark (the CTO hands it `transcript_path` + `conversation_id`), dedups, scrubs
+secrets, and routes each:
+
+| Subject | Gate | Eagerness | Lands in |
+|---|---|---|---|
+| about THIS repo | autonomous | **single-shot** (first occurrence) | the project AGENTS.md's owned sections `## Learned — conventions` / `## Learned — gotchas` |
+| about the company | **founder nods** | **recurrence ≥2** | `.claude/maestro/learnings-inbox.md` (proposal — never auto-written to `conventions.md`) |
+| about the human | **founder approves wording** | **recurrence ≥2** | `.claude/maestro/learnings-inbox.md` (proposal — never auto-written to `me.md`) |
+
+**The safety invariants are code, not trust.** All writes go through `learned-write.sh`, which: writes
+only into a heading matching `## Learned ...`, leaves every byte outside that section identical, dedups
+by normalized text, caps each section at 12, **scrubs secrets** (drops credential-shaped learnings
+before any sink), and gates me.md/conventions candidates behind **recurrence** (records every
+occurrence, queues only at the 2nd near-duplicate). Company/human routes only ever append to the inbox
+— they cannot touch `conventions.md`, `me.md`, the contract prose, `charter/`, `rules/`, or the global
+`~/.claude/AGENTS.md`. **Inbox lifecycle:** the inbox holds proposals → the founder nods → the CTO
+writes the me.md/conventions line BY HAND. The denylist's refusal to auto-write those files IS the
+enforcement of "machine proposes, founder nods". `## Learned` writes are uncommitted diffs — the user
+commits; there is no auto-commit step. This repo's own AGENTS.md is the deployed contract and is
+EXEMPT — it carries no `## Learned` sections. After writing, the consolidator advances the conversation
+watermark (`task-distill.sh advance <transcript> <conversation_id>`) and flags the task
+(`task-record.sh consolidated`) so the same delta is never re-mined.
+
 ## Gate pipeline (`.claude/maestro.json`, full tier)
 
 `{ name, kind: command|judge|action, stage: per-round|pre-ship|release, command?|agent?|action?, paths? }` —
@@ -222,6 +284,7 @@ release action. Only declare commands that exist. An existing manifest is author
 | Lucia | **ui-developer** | opus[1m] | frontend/UI |
 | Thomas | **tester** | opus[1m] | adversarial intent judge + edge-case hunter |
 | Petros | **reviewer** | opus[1m] | full-tier ship-risk review |
+| Remy | **consolidator** | sonnet[1m] | consolidation step: fold warm lessons + the conversation delta → dedup/scrub/route/stamp |
 
 All crew run the 1M-context variants — recon and judging degrade when files stop fitting in the
 window, and 1M tokens are standard pricing on Opus. (Haiku has no 1M variant, hence sonnet scout.)

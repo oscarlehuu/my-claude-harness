@@ -19,9 +19,12 @@ the normal flow: machine proposes, founder nods.
    unedited to `.claude/maestro/<slug>/verdicts/round-<N>-<role>.md` — BEFORE recording the
    one-line summary via `task-record.sh`. The summary is the CTO's words; the file is the
    evidence. Drift between the two is itself a finding about the CTO.
-2. **Lessons are recorded as they happen.** Anything that costs a round, blocks wrongly, breaks,
-   or reveals a CTO error → `task-record.sh lesson summary="<what happened> + <suspected
-   component>"` on the relevant task. Cross-task observations wait for the retro itself.
+2. **Lessons are recorded as they happen, WARM.** Anything that costs a round, blocks wrongly,
+   breaks, or reveals a CTO error → `task-record.sh lesson summary="<what happened> + <suspected
+   component>"` on the relevant task. This is the SINGLE learning store — the continual-learning
+   process feeds the exact same `lesson` events (the crew emit durable learnings warm in their
+   structured output; the CTO records them here; the consolidator later routes them). There is no
+   parallel learning file. Cross-task observations wait for the retro itself.
 
 ## The loop
 

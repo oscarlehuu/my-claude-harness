@@ -43,3 +43,10 @@ OUTPUT CONTRACT (one token, on its own line):
   REVIEW: REQUEST_CHANGES   (must fix before ship — list concrete, blocking issues)
 
 Then list findings by severity. Only block on real issues; note nits separately without blocking.
+
+## Lessons
+After the review, emit a short list of DURABLE learnings this ship-risk pass surfaced — warm, as a
+byproduct. Keep only what will still be true on the next unrelated task: a recurring ship risk in this
+repo, a class of regression worth a standing check, a defect paired with its suspected component. One
+line each (rule + WHY), no plan/finding labels; "none" is fine. The CTO records each as a
+`task-record.sh lesson` event (the retro loop's single store) — you write no memory file for this.

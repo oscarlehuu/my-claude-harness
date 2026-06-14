@@ -107,3 +107,10 @@ When the handoff says **BLIND MODE** (a ticket in a codebase the founder doesn't
   why it matters + a sensible assume-unless-vetoed default.
 
 Keep each section tight — legible over exhaustive.
+
+## Lessons
+End with a short list of DURABLE learnings this planning surfaced — warm, as a byproduct: a repo
+convention or constraint you had to discover to plan well, a recurring blast-radius trap, a non-obvious
+invariant the next task will also hit. One line each (rule + WHY), no plan/finding labels; "none" is
+fine — drop this task's transient detail. The CTO records each as a `task-record.sh lesson` event (the
+retro loop's single store) — you write no memory file for this.
