@@ -7,7 +7,7 @@
 > the same way: **triage every task by risk × size, run only the process that tier needs, and make
 > the safety rails impossible to talk your way past.**
 
-100% native Claude Code — subagents, hooks, a skill, and four small shell scripts. No MCP server,
+100% native Claude Code — subagents, hooks, a skill, and a set of small shell scripts. No MCP server,
 no proxy, no daemon. The whole loop runs inside the conversation where you can watch every step,
 and the state lives in plain files you can `cat`.
 
@@ -73,6 +73,22 @@ ledger as a FAIL signal on its own.
 
 **Risk beats size**: a 3-line migration edit is `full`; a 200-line new test file is `light`.
 
+## Phased mode — large handoffs become resumable phases
+
+A project-scale task is too big for one GOAL handoff to one developer run: that's an un-resumable
+monolith — if the run dies, you reconstruct. **Phased mode** (a mode of *full* tier) decomposes it
+instead. The planner emits **N self-contained, independently-verifiable phases**, and `task-plan.sh`
+scaffolds each as its own `phase.md` — a ready-to-dispatch GOAL handoff with `status · dependencies ·
+risk` frontmatter — under `.claude/maestro/<slug>/phases/`, topo-sorted by an explicit dependency
+graph (a cycle is refused, all-or-nothing — nothing half-scaffolds).
+
+Phases dispatch one developer run at a time; each is verified and committed on the task branch. A
+**two-level Definition of Done** keeps the gates honest: *phase-DoD* is just that phase's verify going
+green; *plan-DoD* is every phase done **plus** the final tester + reviewer + Gate 2. The phase
+checkboxes are both the progress bar and the **resume point** — done phases stay `[x]`, and work
+resumes from the first pending phase whose dependencies are met, re-dispatching its own self-contained
+file. A task with no phases behaves byte-for-byte as before.
+
 ## The crew
 
 The work is done by a named team of subagents. **Maestro** — the CTO — is the session itself: it
@@ -87,6 +103,7 @@ Everyone else runs in an isolated context and signs their work:
 | **Lucia** | ui-developer | opus[1m] | patron of sight and light — interfaces through the user's eyes first: clarity, rhythm, accessibility before cleverness |
 | **Thomas** | tester | opus[1m] | the doubter — believes nothing he hasn't seen fail or survive an honest attempt to break it; judges intent, hunts cheats |
 | **Petros** | reviewer | opus[1m] | keeper of the keys — nothing ships through his gate on charm; pre-ship ship-risk only, protective of production above all |
+| **Remy** | consolidator | sonnet[1m] | the archivist — the continual-learning step; gathers the durable lessons each task leaves and folds them into per-repo memory, deduped and routed; read-mostly |
 
 Three design choices hide in that table:
 
@@ -94,8 +111,9 @@ Three design choices hide in that table:
   auto-loaded every run): Gabriel the repo map, Faber its conventions and build quirks, Thomas the
   cheats he has caught before, Petros past incidents. The crew gets smarter about your codebase
   with every task — and a signed report tells you exactly whose judgment you're reading.
-- **Hands and judges are separated by contract.** Only Faber and Lucia may write to disk. Austin,
-  Gabriel, Thomas, and Petros are read-only — a verdict can never quietly "fix" the thing it judged.
+- **Hands and judges are separated by contract.** Only Faber and Lucia write production code. Austin,
+  Gabriel, Thomas, and Petros are read-only — a verdict can never quietly "fix" the thing it judged —
+  and Remy the consolidator is read-mostly: it only writes distilled lessons to memory.
 - **All-Claude, on 1M-context variants.** Where multi-model setups buy safety through model
   diversity, maestro buys it through **executable ground truth** (edge cases must become tests)
   and **fresh-context adversarial judges**: Thomas receives the same GOAL the developer did, in a
@@ -195,10 +213,10 @@ only their plain-file ledgers, which you can delete or keep as history.
 
 ```
 maestro/                  the harness domain — everything that runs
-  SKILL.md                  the operative protocol: tier playbooks, blind mode, the loop
-  crew/                     the team — Austin, Gabriel, Faber, Lucia, Thomas, Petros (named, with per-repo memory)
-  hooks/                    guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · crew-context · maestro-engage
-  scripts/                  the ledger + HQ toolbox: task-init/verify/record/status/report · queue-add · team-board
+  SKILL.md                  the operative protocol: tier playbooks (incl. phased mode), blind mode, the loop
+  crew/                     the team — Austin, Gabriel, Faber, Lucia, Thomas, Petros, Remy (named, with per-repo memory)
+  hooks/                    guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · distill-cadence · crew-context · maestro-engage
+  scripts/                  the ledger + HQ toolbox: task-init/plan/verify/record/status/report · task-distill · learned-write · queue-add · team-board · registry-add
   charter/                  gate pipeline · Definition of Done
 hq/                       office deployment kit — chief-of-staff template + bootstrap (a live HQ is your own private repo)
 rules/                    global engineering rules — deployed to .claude/rules alongside the contract
