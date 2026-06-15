@@ -32,6 +32,24 @@ with open(os.path.join(dir, "state.json"), "r", encoding="utf-8") as f:
 tier = s.get("tier", "full")
 checks = []  # (label, status: True/False/None=n/a, detail)
 
+# Phased mode (roadmap #9) — ONLY active when a non-empty `phases` map is present. Absent / null /
+# empty / non-dict ⇒ phased is False and EVERY line below is byte-for-byte the legacy single-GOAL
+# output (the load-bearing non-regression invariant). A present map adds a k/N strip + per-phase
+# marks + a plan-DoD "all phases done" row; it never alters a legacy task's rendering.
+_raw_phases = s.get("phases")
+phased = isinstance(_raw_phases, dict) and len(_raw_phases) > 0
+phases = phases_order = None
+phase_graph_err = None
+if phased:
+    import phases_lib as ph  # shared graph/topo helper — same one task-plan.sh scaffolds with
+    try:
+        phases = ph.normalize_phases(_raw_phases)
+        phases_order = ph.topo_order(phases)
+    except ph.GraphError as e:
+        # A hand-corrupted phases map (cycle/dangling/bad id) is a hard blocker, not a silent pass —
+        # an un-orderable plan can never be dispatched. Mirror the Open-Questions corrupt-sheet stance.
+        phase_graph_err = str(e)
+
 # Open-Questions gate — applies at EVERY tier (a load-bearing unknown is dangerous at any size).
 # A corrupt sheet is a hard blocker, not a silent pass (an unreadable ledger of unknowns is itself
 # an unknown). The predicate is questions_gate.is_blocking — the SAME one task-record uses to refuse
@@ -83,8 +101,44 @@ else:
     checks.append(("Plan approved (Gate 1)", None, "n/a below full tier"))
     checks.append(("Reviewer APPROVE", None, "n/a below full tier"))
 
+# Two-level DoD (phased mode only). The PLAN-DoD adds one row on top of the plan-level gates above
+# (tester PASS + reviewer APPROVE + Gate 1): EVERY phase must be done. This is what keeps the
+# plan-DoD BLOCKED until all phases finish even when the verify command is green — a green verify is
+# the PHASE-DoD (the per-phase done/resume signal), not the ship signal. A corrupt phases map blocks.
+if phased:
+    if phase_graph_err is not None:
+        checks.append(("All phases done (plan-DoD)", False,
+                       f"phases map unreadable ({phase_graph_err}) — fix state.phases"))
+    else:
+        done, total = ph.progress(phases)
+        all_done = (done == total)
+        if all_done:
+            detail = f"{done}/{total} done"
+        else:
+            nxt = ph.next_dispatchable(phases)
+            pend = ", ".join(pid for pid in phases_order if phases[pid]["status"] != "done")
+            detail = f"{done}/{total} done — pending: {pend}" + (f"; next: {nxt}" if nxt else "")
+        checks.append(("All phases done (plan-DoD)", all_done, detail))
+
 print(f"Task: {s.get('slug')}   Tier: {tier}   State: {s.get('state')}   Round: {s.get('round')}")
 print(f"  {s.get('task','')}")
+
+# Phases strip + per-phase marks (phased mode only) — the progress AND resume view. Printed right
+# after the header so the CTO sees k/N before the DoD. The in-flight / next-dispatchable phase is
+# flagged so resume is a glance, not a reconstruction.
+if phased and phase_graph_err is None:
+    done, total = ph.progress(phases)
+    nxt = ph.next_dispatchable(phases)
+    print(f"Phases: {done}/{total} done" + (f"   next: {nxt}" if nxt else "   (all done)"))
+    glyph = {"done": "x", "in-progress": "~", "pending": " "}
+    for pid in phases_order:
+        e = phases[pid]
+        st = e.get("status", "pending")
+        flag = "  <- next" if pid == nxt else ""
+        deps = ", ".join(e["deps"]) or "none"
+        print(f"  [{glyph.get(st, '?')}] {pid}  ({st}, deps: {deps}, risk: {e['risk']}){flag}")
+elif phased and phase_graph_err is not None:
+    print(f"Phases: UNREADABLE — {phase_graph_err}")
 
 # Full Open-Questions listing (the DoD line carries only ids for brevity; here the CTO sees the
 # actual question text so it knows WHAT to clear). Only printed when a sheet exists.

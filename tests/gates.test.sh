@@ -238,6 +238,44 @@ run_hook "$HOOKS/commit-gate.sh" "$commit_payload"
 assert_exit 0 "$HOOK_EXIT" "full tier allows with tester PASS + Gate 1 + reviewer APPROVE"
 "$SCRIPTS/task-record.sh" task_done >/dev/null
 
+# --- PHASED MODE commit-gate (roadmap #9): PHASE commit vs SHIP commit ----------
+# REGRESSION GUARD (case c): every commit-gate assertion ABOVE ran on a NON-phased task — they ARE
+# the proof that an absent `phases` map behaves byte-for-byte as today. If the phased branch leaked
+# into the legacy path, those assertions would have broken. The two cases below add phased behavior.
+"$SCRIPTS/task-init.sh" phased-gate full "phased commit gate" "bash check.sh" >/dev/null
+cat > phase-spec.json <<'JSON'
+{ "phases": [ { "id": "ph-a", "risk": "high" }, { "id": "ph-b", "deps": ["ph-a"], "risk": "low" } ] }
+JSON
+"$SCRIPTS/task-plan.sh" phase-spec.json >/dev/null
+printf 'exit 0\n' > check.sh   # the ONE repo verify (founder decision: all phases share it)
+
+# Case (a): a phase is still pending and the verify is GREEN → PHASE commit → ALLOWED. No tester
+# PASS, no reviewer, no Gate-1 recorded — phase commits skip the plan-level gates by design.
+run_hook "$HOOKS/commit-gate.sh" "$commit_payload"
+assert_exit 0 "$HOOK_EXIT" "commit-gate PHASE commit: pending phase + green verify → allowed (skips plan-DoD)"
+
+# A phase commit STILL re-runs verify (Layer 2 = the phase-DoD). A red verify blocks even mid-phase.
+printf 'exit 1\n' > check.sh
+run_hook "$HOOKS/commit-gate.sh" "$commit_payload"
+assert_exit 2 "$HOOK_EXIT" "commit-gate PHASE commit: pending phase + RED verify → blocked (verify is the phase-DoD)"
+printf 'exit 0\n' > check.sh
+
+# Case (b): mark EVERY phase done → zero pending → the next commit is the SHIP commit → full
+# plan-DoD applies. With no tester PASS recorded, the ship commit is BLOCKED (back to ship-DoD).
+"$SCRIPTS/task-record.sh" phase_done phase=ph-a >/dev/null
+"$SCRIPTS/task-record.sh" phase_done phase=ph-b >/dev/null
+run_hook "$HOOKS/commit-gate.sh" "$commit_payload"
+assert_exit 2 "$HOOK_EXIT" "commit-gate SHIP commit: all phases done + no tester PASS → blocked (full plan-DoD)"
+assert_contains "$HOOK_ERR" "tester PASS" "ship commit block names the missing plan-level DoD item"
+
+# Satisfy the full plan-DoD → the ship commit goes through.
+"$SCRIPTS/task-record.sh" gate1_approved >/dev/null
+"$SCRIPTS/task-record.sh" tester_verdict verdict=PASS >/dev/null
+"$SCRIPTS/task-record.sh" reviewer_verdict verdict=APPROVE >/dev/null
+run_hook "$HOOKS/commit-gate.sh" "$commit_payload"
+assert_exit 0 "$HOOK_EXIT" "commit-gate SHIP commit: all phases done + full plan-DoD met → allowed"
+"$SCRIPTS/task-record.sh" task_done >/dev/null
+
 # --- stop-dod -------------------------------------------------------------------
 sleep 1 && echo "code" > app.py
 run_hook "$HOOKS/stop-dod.sh" '{"stop_hook_active":false}'

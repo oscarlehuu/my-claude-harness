@@ -23,6 +23,7 @@ JSON is only ever written by these scripts — never hand-write ledger files.
 | Script | What it does | Why a script |
 |---|---|---|
 | `task-init.sh <slug> <tier> "<task>" [verify-cmd]` | open the ledger (`.claude/maestro/<slug>/`), set the tier, point `active` at it | stable schema the hooks can trust |
+| `task-plan.sh [--slug <slug>] <spec.json>` | phased mode: scaffold N self-contained phase files under `phases/phase-NN-<short>/` (GOAL handoff + own `edge-cases.md` + `verdicts/`), topo-sort the `deps` graph (non-zero on cycle/dangling/dup), seed the `phases` map into `state.json` | decomposition + cycle-check is **code**, and the `phases` map the hooks read is written by a script |
 | `task-verify.sh [-- <cmd>]` | run the verify command, record exit code + timestamp | a recorded pass is **ground truth**, not your claim |
 | `task-record.sh <event> [k=v ...]` | record verdicts/gates/escalations; mirrors latest into `state.json` | hooks read it; tier ratchet refuses downgrades |
 | `task-status.sh [slug]` | render the tier-aware DoD checklist, exit 0/1 | the Gate-2 checklist is rendered **by code, not discipline** |
@@ -237,6 +238,57 @@ You own **WHAT**; the developer owns **HOW** — don't dictate diffs. Re-attach 
 **Crew escalation**: a subagent ending with `NEEDS DECISION: <q> (recommended default: <x>)` pauses
 the loop — answer from context if you reasonably can, else relay via AskUserQuestion, then
 re-dispatch with the answer baked in. Never silently guess a material product decision.
+
+### 3a. Phased mode (project/large handoffs — a mode of full tier, not a 5th tier)
+
+A whole-project handoff is too big for one developer run — an un-resumable monolith. Phased mode
+decomposes it into **N self-contained, independently-verifiable phase files**, dispatched **one per
+developer run**, with **per-phase verify + per-phase commits**, a **two-level DoD**, and **true
+resume**. Sequential spine only (parallel-via-worktrees is a later wave).
+
+**Auto-detect the trigger (CTO judgment, like tier triage — no code gate forces it).** Enter phased
+mode for a **project/large handoff**: many coherent deliverables, broad blast radius, or work that
+plainly won't finish in one developer run. A small/contained full-tier task keeps the single-GOAL
+flow — **phasing a 3-file change is over-decomposition.** Announce the choice to the founder when you
+make it.
+
+**Flow:**
+
+1. **Decompose** — the planner returns the plan as **N phases** (`crew/planner.md` phased addendum:
+   count is an OUTPUT, never forced; >1 verifiable deliverable → split; no independent acceptance →
+   merge). You scaffold them: write a `spec.json` (each phase: `id`, optional `short`/`deps`/`risk`,
+   and the GOAL-body fields) and run `task-plan.sh <spec.json>`. It creates
+   `phases/phase-NN-<short>/{phase.md, edge-cases.md, verdicts/}` in dependency order and seeds the
+   `phases` map into `state.json`. A cycle / dangling dep / duplicate id is **rejected** — fix the
+   graph and re-run (it refuses to clobber an existing `phases/` tree, so `rm` it first to re-plan).
+2. **Work on a task branch** — phased work commits **per phase** on a branch (`feat/<slug>`), so the
+   spine is a sequence of phase commits and resume is a checkout. (The hook classifies commits; it
+   does not create the branch — you do.)
+3. **Dispatch one phase at a time** — pick the **next dispatchable** phase (the resume rule below),
+   `task-record.sh phase_started phase=<id>`, dispatch the developer with **that phase's `phase.md`
+   as its entire GOAL handoff** (it writes its edge-case ledger under the phase dir). Then **pin this
+   order, every phase — verify green → `phase_done` → commit:**
+   - `task-verify.sh` (the ONE repo verify; all phases share it — the per-phase `verify:` frontmatter
+     is acceptance annotation only). Green is the **phase-DoD**.
+   - `task-record.sh phase_done phase=<id>` — only after verify is green (so the strip and the commit
+     can never disagree).
+   - commit the phase on the task branch. While any phase is still pending, `commit-gate` treats this
+     as a **PHASE commit** — it re-runs the verify (the phase-DoD) and **skips** the plan-level
+     tester/reviewer/Gate-1 requirements.
+   - tester runs on `risk:high` phases (save the verdict under the phase's `verdicts/`); low-risk
+     phases ride the scoped-verify alone.
+4. **Resume = first not-done phase whose deps are all done.** `task-status.sh` renders the
+   `Phases: k/N done` strip and flags the next phase. If a developer dies mid-phase, that phase is
+   `in-progress`, done phases are `[x]`; re-dispatch the dying phase's own `phase.md` (+ its
+   `git diff`) — true resume, not reconstruct.
+5. **Ship when zero phases pending.** Once every phase is `done`, the next commit is the **SHIP
+   commit** — `commit-gate` switches to the full **plan-DoD** (a final whole-plan tester PASS +
+   reviewer APPROVE + Gate 1 + verify green), exactly the §7/§8 full-tier ship path. `task-status.sh`
+   carries an `All phases done (plan-DoD)` row that blocks until then — a green verify alone is the
+   phase-DoD, never the ship signal.
+
+**Non-phased tasks are untouched** — with no `phases` map, `commit-gate` and `task-status` behave
+byte-for-byte as the single-GOAL flow (the load-bearing non-regression invariant).
 
 ## 4. Verify (every tier — ground truth)
 

@@ -123,6 +123,31 @@ founder as a "is this really needed?" flag, NOT a licence to silently cut scope.
 to the founder's decision: a large diff may be exactly right (the founder may have asked for it). You
 flag and justify; the founder decides — never reverse a scope the founder has set.
 
+## Phased mode addendum (project/large handoffs)
+
+When the handoff says **PHASED MODE** (a project/large handoff — a *mode of full tier*, not a 5th
+tier), your `## Plan` is not a list of steps for one developer run — it is **N self-contained phase
+files**, each a ready-to-dispatch GOAL handoff that one developer run completes with its own
+acceptance. The CTO scaffolds them with `task-plan.sh` from a spec you describe; you decide the
+decomposition and the dependency edges.
+
+- **Each phase = one coherent, independently-verifiable, solo-executable unit** — sized so one
+  developer run finishes it with its own acceptance test. It serializes the Maestro GOAL shape
+  (GOAL · CONTEXT · DELIVERABLES · CONSTRAINTS/NON-GOALS · ACCEPTANCE/VERIFY) — NOT claudekit's
+  7 sections. Frontmatter per phase: `id · status · dependencies[] · verify · risk(low|high)`.
+- **Phase count is an OUTPUT, never a target.** Decompose until each phase meets the bar above — a
+  project yields 10-20, a feature 3-6. **Never force a number; never merge to hit a ceiling.**
+  Guardrails: a phase with **>1 verifiable deliverable** or too-wide reach → **split**; a phase
+  with **no independent acceptance** → it is not a phase, **merge** it.
+- **Dependencies are explicit** — list each phase's `dependencies:` (the ids it needs `done`
+  first). The graph is topo-sorted at scaffold; a cycle / dangling dep / duplicate id is rejected
+  (the CTO will bounce the spec back to you). Keep the spine **sequential** unless a phase is
+  genuinely independent — parallel-via-worktrees is a later wave, out of scope here.
+- **Per-phase artifact scoping** — each phase owns its `edge-cases.md` and `verdicts/`; never a
+  shared ledger across phases (a shared one races when phases run concurrently later).
+- **Risk tag drives the gate cadence** — `risk:high` phases get a tester pass; low-risk phases ride
+  the scoped-verify only; one final whole-plan tester + a single pre-ship reviewer cover the plan.
+
 ## Blind mode addendum
 
 When the handoff says **BLIND MODE** (a ticket in a codebase the founder doesn't own), additionally:

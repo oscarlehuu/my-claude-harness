@@ -166,9 +166,17 @@ Founder chose to ship these **separately** (each its own ledger task). Order = v
 
 **Status (2026-06-15):** items **1-8 DONE + deployed to ~/.claude** (@ `d0a8f97`). 1-6 prose-craft
 (`ef9c0d6`); 7 Open-Questions gate (`c…` full build, fails-closed, dogfooded); 8 flow layer
-(scout-first + plan/security red-teams, prose-only). All gated (verify + tester PASS + reviewer
-APPROVE). **Only #9 (phase-decomposition) remains** — the big one; founder to take it as its own
-co-design session. Leftovers folded into #9's wave: lazy-load (SKILL→charter) + consolidator.md hygiene.
+(scout-first + plan/security red-teams, prose-only). **#9 (phase-decomposition) BUILT** — sequential
+spine: `task-plan.sh` scaffolds N phase files (serialized GOAL handoffs) under
+`phases/phase-NN-<short>/` with per-phase artifact scoping; `task-record.sh` `phase_started`/
+`phase_done` events drive a `phases` map in `state.json`; `task-status.sh` renders the k/N strip +
+two-level DoD; `commit-gate.sh` learns PHASE-commit (pending phase ⇒ verify-only) vs SHIP-commit
+(all done ⇒ full plan-DoD), with the absent-`phases` path byte-for-byte unchanged. **The whole roadmap
+slate (1-9) is now built.** Deferred to follow-up tasks (explicitly OUT of #9's sequential-spine
+scope): parallel independent phases via worktrees under WIP 2-3, lazy-load (SKILL→charter),
+consolidator.md hygiene, and `task-plan.sh` full write-atomicity (temp-sibling dir + `os.replace` to
+also close the rare disk-IO-between-makedirs-and-seed orphan window — the corrupt-ledger read is
+already closed; reviewer-approved as a follow-up, not a ship gate).
 
 1. **Anti-rationalization + DoD self-check + contract-stability → Faber.** [light] — first; targets
    the green-but-wrong round problem measured this session.
@@ -179,7 +187,8 @@ co-design session. Leftovers folded into #9's wave: lazy-load (SKILL→charter) 
 6. **Report hygiene + lazy-load.** [light] — light touch across files; batch last of the prose work.
 7. **Open-Questions gate** (artifact + gate). [standard/full] — mechanism; pairs with the planner cluster.
 8. **Scout-first (conditional) + Plan red-team + Security red-team.** [full] — flow additions.
-9. **Phase-decomposition layer.** [full] — the biggest; planner + ledger + dispatch + resume.
+9. **Phase-decomposition layer.** [full] — DONE (sequential spine): `task-plan.sh` + `phases` map +
+   `phase_started`/`phase_done` events + k/N strip + two-level DoD + commit-gate phase/ship mode.
 
 Items 1-6 are prose-craft (fast, independent). Items 7-9 are mechanism/flow (planner + ledger +
 gates) and naturally cluster; the Open-Questions gate, scout-first, red-team, and phasing all touch

@@ -296,6 +296,24 @@ try:
 except Exception:
     sys.exit(0)  # unreadable ledger fails open; the verify re-run below still gates
 
+# Phased mode (roadmap #9): derive the commit mode from the `phases` map. A present, non-empty map
+# with ANY phase not `done` ⇒ this is a PHASE commit → require ONLY that the phase's verify is green
+# (the verify re-run below), NOT the plan-level tester/reviewer/Gate-1 gates. Zero pending (all done)
+# OR no `phases` map ⇒ fall through to the SHIP-DoD below VERBATIM. ABSENT/null/empty/non-dict map ⇒
+# `phased` is False ⇒ byte-for-byte the legacy single-GOAL path (the load-bearing non-regression
+# invariant). All phases share the ONE repo verify command (founder decision) — there is NO
+# per-phase distinct-command resolver here; `verify:` frontmatter is acceptance annotation only.
+_phases = s.get("phases")
+if isinstance(_phases, dict) and _phases:
+    _any_pending = any(
+        (p.get("status") if isinstance(p, dict) else None) != "done"
+        for p in _phases.values())
+    if _any_pending:
+        # PHASE commit: skip plan-DoD. The verify re-run (Layer 2 below) is the phase-DoD and still
+        # gates this commit — a phase with a red verify cannot be committed.
+        sys.exit(0)
+    # else: all phases done → the SHIP commit → fall through to the full plan-DoD unchanged.
+
 tier = s.get("tier", "full")
 missing = []
 if tier in ("standard", "full") and s.get("lastTesterVerdict") != "PASS":

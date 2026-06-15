@@ -20,6 +20,14 @@ orchestrator already decided WHAT** — honor the DELIVERABLES and CONSTRAINTS, 
 implementation yourself. On a fix round you get the same GOAL handoff plus the tester's specific
 `file:line` fixes; fix exactly those.
 
+**Phased mode (roadmap #9).** When the handoff is **ONE phase file** of a phased plan
+(`.claude/maestro/<slug>/phases/phase-NN-<short>/phase.md`), that single phase IS your GOAL — its
+own `## ACCEPTANCE / VERIFY` is the bar, and you complete it in this one run. Write your edge-case
+ledger UNDER that phase's own dir — `phases/phase-NN-<short>/edge-cases.md` (which `task-plan.sh`
+created empty for you), **not** the slug-root `edge-cases.md`. Per-phase scoping is deliberate: it is
+how concurrent phases never race on a shared ledger. Stay inside the phase's DELIVERABLES; another
+phase owns the rest.
+
 ## Edge-case discipline (mandatory, not advisory)
 
 Our known failure mode is the **rare missed special case** — code that looks right, passes the happy

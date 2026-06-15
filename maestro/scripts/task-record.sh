@@ -11,6 +11,10 @@
 #   reviewer_verdict verdict=APPROVE|REQUEST_CHANGES|INCONCLUSIVE [summary="..."]
 #   tier_escalated   tier=standard|full reason="..."    (one-way: refuses downgrades)
 #   round_started                        bump the round counter (fix loop)
+#   phase_started    phase=<id>          a phased-mode phase begins (-> in-progress in state.phases)
+#   phase_done       phase=<id>          a phased-mode phase finishes (-> done in state.phases)
+#                                        BOTH refuse an unknown phase id (the map is seeded by
+#                                        task-plan.sh; transitions never create a ghost phase)
 #   gate2_approved                       founder approved ship
 #   task_done | escalated                close the task, clear the active pointer
 #   consolidated                         the continual-learning consolidator finished this task
@@ -240,6 +244,23 @@ elif event == "round_started":
     # a new dev round invalidates previous judgments — they judged the old diff
     state["lastTesterVerdict"] = None
     state["lastReviewerVerdict"] = None
+elif event in {"phase_started", "phase_done"}:
+    # Phased mode (roadmap #9): transition ONE phase's status in the state.phases map. The map is
+    # seeded by task-plan.sh at scaffold; these events only move an EXISTING phase along
+    # pending -> in-progress -> done. Recording for an id NOT in the map fails non-zero — never
+    # auto-create a ghost phase, or a typo'd id would silently never be counted toward plan-DoD.
+    phase_id = kv.get("phase", "")
+    if not phase_id:
+        sys.exit(f"{event} needs phase=<id> (the phase to transition)")
+    phases = state.get("phases")
+    if not isinstance(phases, dict) or phase_id not in phases:
+        known = ", ".join(sorted(phases)) if isinstance(phases, dict) and phases else "(none)"
+        sys.exit(f"{event}: unknown phase id '{phase_id}' — not in state.phases. "
+                 f"Known phases: {known}. Scaffold with task-plan.sh first.")
+    entry = phases[phase_id]
+    if not isinstance(entry, dict):
+        sys.exit(f"{event}: phase '{phase_id}' entry is malformed in state.phases")
+    entry["status"] = "in-progress" if event == "phase_started" else "done"
 elif event in {"task_done", "escalated"}:
     state["state"] = "done" if event == "task_done" else "escalated"
     closing = True

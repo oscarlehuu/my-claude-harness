@@ -30,7 +30,7 @@ maestro/             the harness domain — everything that runs
   SKILL.md             the operative protocol (/maestro): tier playbooks, blind mode
   crew/                the team: planner · scout · developer · ui-developer · tester · reviewer
   hooks/               guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · distill-cadence · crew-context · maestro-engage
-  scripts/             task-init · task-verify · task-record · task-status · task-report · task-distill · learned-write · queue-add · team-board · registry-add
+  scripts/             task-init · task-plan · task-verify · task-record · task-status · task-report · task-distill · learned-write · queue-add · team-board · registry-add
   charter/             gate-pipeline.md · definition-of-done.md · retro-loop.md
 hq/                  the office deployment kit — templates/AGENTS.md · bootstrap.sh (a live HQ is a separate private repo)
 rules/               the founder's global engineering rules — install.sh deploys them to .claude/rules
@@ -66,6 +66,10 @@ assume-unless-vetoed team packet; tier floor = `standard`.
 The CTO records, scripts write, hooks enforce — full protocol in `maestro/SKILL.md`:
 
 - `task-init.sh <slug> <tier> "<task>" [verify-cmd]` — open the ledger (`.claude/maestro/<slug>/`).
+- `task-plan.sh [--slug <slug>] <spec.json>` — phased mode (full tier): decompose a large/project
+  handoff into N self-contained phase files under `phases/phase-NN-<short>/` (each a serialized GOAL
+  handoff + its own `edge-cases.md` + `verdicts/`); topo-sorts the `deps` graph and exits non-zero on
+  a cycle/dangling-dep/duplicate-id; seeds the `phases` map into `state.json`.
 - `task-verify.sh` — the ONLY writer of verify records: a recorded pass means the command really
   exited 0. Exit code is ground truth; nothing overrides a non-zero into success.
 - `task-record.sh` — verdicts, gates, escalations, `lesson` events (defect + suspected component
