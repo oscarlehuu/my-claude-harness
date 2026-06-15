@@ -147,11 +147,11 @@ global-load of the AGENTS.md contract is intentional, leave it.
 Founder chose to ship these **separately** (each its own ledger task). Order = value descending;
 #1 is grounded in this session's measured round-cost.
 
-**Status (2026-06-15):** items 1-6 (the prose-craft slate) are DONE — all six crew contracts
-upgraded, gated (verify + tester PASS + reviewer APPROVE), committed `ef9c0d6`, and **deployed to
-~/.claude**. Lazy-load (6, second half) is deferred into the mechanism waves alongside
-consolidator.md hygiene. Items 7-9 remain (each a full build); founder paused after Wave 1 to take
-them fresh.
+**Status (2026-06-15):** items **1-8 DONE + deployed to ~/.claude** (@ `d0a8f97`). 1-6 prose-craft
+(`ef9c0d6`); 7 Open-Questions gate (`c…` full build, fails-closed, dogfooded); 8 flow layer
+(scout-first + plan/security red-teams, prose-only). All gated (verify + tester PASS + reviewer
+APPROVE). **Only #9 (phase-decomposition) remains** — the big one; founder to take it as its own
+co-design session. Leftovers folded into #9's wave: lazy-load (SKILL→charter) + consolidator.md hygiene.
 
 1. **Anti-rationalization + DoD self-check + contract-stability → Faber.** [light] — first; targets
    the green-but-wrong round problem measured this session.
