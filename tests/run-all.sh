@@ -7,6 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 suites=(
   "$ROOT/tests/guard-smoke.test.sh"
   "$ROOT/tests/ledger-scripts.test.sh"
+  "$ROOT/tests/open-questions.test.sh"
   "$ROOT/tests/distill.test.sh"
   "$ROOT/tests/gates.test.sh"
   "$ROOT/tests/context-hooks.test.sh"

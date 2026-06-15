@@ -84,10 +84,13 @@ artifacts (packet, ledger notes, ticket reply, knowledge file) are English**.
    date-stamped hints, re-verify before relying). Spawn `scout` for recon; map every noun in the
    ticket to real code (`file:line` citations mandatory), mine `git log/blame` and past fixes for
    the "why"s. Never ask a human what grep or git can answer.
-3. **Assumption ledger with routing** — every remaining gap: statement + confidence + cost-if-wrong
-   + source-of-truth route: `code` (verify it yourself) · `history` (dig git/PRs) · `founder`
-   (taste/priority only) · `team` (domain facts the company knows). No team available → `team`
-   downgrades to `history` + probe tests.
+3. **Assumption ledger with routing** — every remaining gap is a question on the canonical
+   **Open-Questions gate** (§2a): `task-record.sh question add "<gap>" route=<…> cost=<…>`. The route
+   is the source-of-truth: `code` (verify it yourself) · `history` (dig git/PRs) · `founder`
+   (taste/priority only) · `team` (domain facts the company knows) · `planner` (deep-technical, the
+   plan's job). No team available → `team` downgrades to `history` + probe tests. The gate's
+   predicate (not prose) decides what blocks; drain it (resolve/answer) before planning, and Gate 1
+   hard-refuses while a blocker remains.
 4. **Team packet** — `team`-routed items become ONE paste-ready English block, capped at ~5
    questions ranked by cost-if-wrong (the rest: assume + log). Each question: one line of why it
    matters + a stated default. **Assume-unless-vetoed**: work proceeds on defaults; a veto returns
@@ -105,7 +108,7 @@ artifacts (packet, ledger notes, ticket reply, knowledge file) are English**.
 
 ```
 Understand ticket:   plain-language restatement + file:line grounding + jargon resolved/unresolved
-Assumptions:         each with (confidence) (cost-if-wrong) (route: code|history|founder|team)
+Assumptions:         each with (confidence) (cost-if-wrong) (route: code|history|founder|team|planner)
 Plan:                ordered steps, scoped to the ticket
 Goal:                the GOAL handoff guarantees — no production bug (blast radius covered),
                      ticket scope fully covered, tests implemented and passing via task-verify.sh
@@ -128,6 +131,45 @@ documentation — teammate words become docs.
   low-confidence Assumptions, and Non-goals in full, ask MISSING/UNKNOWN requirements proactively
   (secret values out-of-band), then AskUserQuestion (header `Gate 1`): **Approve / Revise**. Do not
   proceed until approved; record with `task-record.sh gate1_approved`.
+
+### 2a. Open-Questions gate (the canonical, code-enforced invariant)
+
+No load-bearing unknown may silently flow into planning or implementation. "Open questions" are a
+**persisted artifact** (`.claude/maestro/<slug>/questions.json`) with a **deterministic, cost-gated**
+blocking predicate — not scattered prose. This generalizes blind-mode's assumption ledger into one
+mechanism with teeth.
+
+- **Lifecycle** — `task-record.sh question`:
+  - `question add "<text>" route=<code|history|founder|team|planner> [cost=<low|med|high>]` —
+    appends an `open` question (auto-id q1, q2, …). **`cost` defaults to `high`** if omitted (the
+    tie-breaker below as a default).
+  - `question resolve <id> cite="<file:line or note>"` — for `code`/`history` questions the CTO/scout
+    closed by **investigation** (status → `resolved`).
+  - `question answer <id> note="<founder/team answer>"` — for `founder`/`team` questions that got
+    their **answer** (status → `answered`).
+  - `question list` — human-readable dump with blocking markers.
+- **Blocking predicate (deterministic — the heart).** A question BLOCKS iff
+  `(route ∈ {code,history} AND status==open)` OR `(route ∈ {founder,team} AND cost==high AND
+  status≠answered)`. Non-blocking by construction: any `planner`-routed question (resolving it is the
+  plan's job), `founder`/`team` low/med-cost still open (assume-unless-vetoed), anything
+  resolved/answered. **No `questions.json` = trivially clean.** Note: a high-cost `founder`/`team`
+  question must be **answered**, not merely resolved-by-investigation — the founder decision was the
+  whole point, so `resolved` does NOT clear it.
+- **Scout-first precondition (keeps the gate from becoming a crutch).** Resolve `code`/`history` by
+  investigation FIRST and cite it; route to the founder **only** what genuinely needs the founder,
+  and only **high-cost** founder/team questions block. Honors me.md ("bring decisions, not progress";
+  "don't ask what grep answers").
+- **Tie-breaker.** Torn on high vs low for >10s → treat as **high** → block. (Mirrors the tier
+  ratchet's one-way bias toward safety.)
+- **Enforcement is CODE, not prose (the teeth).** `task-status.sh` renders an **Open-Questions gate**
+  DoD line — a BLOCKER (with the offending ids listed) while any blocking question remains, clean
+  otherwise. `task-record.sh gate1_approved` **hard-refuses** (exit ≠ 0, prints the blockers + how to
+  clear them, appends NOTHING) while the sheet is unclean; a corrupt `questions.json` also refuses
+  (an unreadable ledger of unknowns is itself an unknown — never a silent pass).
+- **Placement.** Check `task-status.sh` is clean **before dispatching the planner** (scout→planner
+  boundary — documented discipline + the visible blocker), and Gate 1 (`gate1_approved`) hard-refuses
+  if unclean (planner→dev boundary — the code teeth). Both are the same predicate, so the visible
+  blocker and the refusal can never disagree.
 
 ## 3. Implement (light/standard/full)
 
