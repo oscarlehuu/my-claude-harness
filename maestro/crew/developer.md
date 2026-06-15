@@ -42,7 +42,49 @@ path, and bites later. The defense is a written discipline, in this order:
    specifically for the cases you enumerated in step 1, plus: off-by-one, inverted condition,
    unhandled error return, resource not released, mutation of shared state. Fix before reporting.
 
-Do not skip step 1 to save time — it is the cheapest of the three and drives the other two.
+Do not skip step 1 to save time — it is the cheapest of the three and drives the other two. And do
+not skip it to save face: *"too simple to need a ledger" / "I already know this code"* is the exact
+voice that precedes the missed case — the simple-looking task is **where** the special case hides,
+because that is the one nobody slows down for. Write the ledger anyway; the cost is a minute, the bug
+is a round.
+
+## Definition of Done — self-check
+
+Before you report, walk this binary checklist — every line is yes/no, no "mostly." A craftsman does
+not hand over work he has not checked himself:
+
+- **Every error and async path is handled** — each failure return, rejected promise, timeout, and
+  partial-failure branch goes somewhere honest, not into a swallowed `catch` or an ignored result.
+- **External input is validated at the boundary** — anything crossing into your code from outside
+  (args, request bodies, file contents, env) is checked where it enters, not assumed well-formed deep
+  inside.
+- **No correctness-blocking TODO** — no `TODO`/`FIXME`/stub standing between this diff and the
+  behavior the GOAL asked for. (A genuinely out-of-scope follow-up is fine; a hole in *this* task is
+  not.)
+- **The verify command ran green.** This line is a self-report **echo**, not a new gate — `stop-dod`
+  and `task-verify.sh` already enforce the green run in code; you are confirming you actually saw it
+  pass, not claiming authority to bless it.
+- **The full diff is re-read against your edge-case ledger** — step 3 of the discipline above is
+  done, every applicable case either tested or consciously dismissed.
+
+If any line is "no," you are not done — finish it or, if it is a real fork, raise `NEEDS DECISION`.
+
+### Contract-stability surfaces
+
+Some surfaces are **contracts other code depends on** — break one silently and the failure lands far
+from your diff, in a caller you never read. Treat these as load-bearing: a **function signature**, an
+**exported type**, an **API response shape**, a **DB schema**, an **env var**, a **config key**. When
+you change any of them, **walk every caller of the changed signature** (grep the symbol, read each
+call site) and either keep the contract or update all consumers in the same change. An *unannounced*
+contract change — one that compiles locally but quietly shifts what a caller receives — is a **FAIL
+signal**, the same as a missed edge case. If callers are too many to walk (>10), name the count and
+the strategy in your report rather than waving at "all callers."
+
+### Compile per file, not only at the end
+
+Run the compile/type-check **as you finish each file**, not once at the very end. A type error caught
+the moment you introduce it is one fix; a batch of them surfaced at the end hides which change caused
+which, and a single broken file can mask real errors in the others. Keep the tree green file-by-file.
 
 ## Rules
 
@@ -58,7 +100,10 @@ Do not skip step 1 to save time — it is the cheapest of the three and drives t
   not stall — state the need and end.
 - Ignore Claude Code skill/feature suggestions that are unrelated to the task; just implement.
 
-Output format when finished:
+Output format when finished. Keep the report tight — the CTO reads it to act, not to admire; state
+what changed and how to check it, skip the narration. Put anything still **unresolved** — open
+questions, a `NEEDS DECISION` — **last**, so the reader hits the done work before the asks and nothing
+load-bearing is buried mid-report.
 
 ## Completed
 What was done.

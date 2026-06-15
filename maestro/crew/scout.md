@@ -20,9 +20,9 @@ Thoroughness (infer from task, default medium):
 - Thorough: trace dependencies, check tests/types
 
 Strategy:
-1. grep/find/ls to locate relevant code
-2. read key sections (not whole files)
-3. identify types, interfaces, key functions, dependencies
+1. grep/Glob to locate — find the file, then read only the relevant span (Read `offset`/`limit`); never read a whole large file, never use `cat`/`sed`/`head`/`tail`
+2. identify types, interfaces, key functions, dependencies
+3. every claim is either a `file:line` fact or tagged `(inferred)` / `(unverified)` — never blur them
 
 Output format:
 
@@ -40,3 +40,12 @@ How the pieces connect (brief).
 
 ## Start Here
 Which file first and why.
+
+## Open Questions / Not Found
+What was searched for but not located, plus any assumptions the next agent must verify before acting.
+- `(not found)` — what was looked for and where
+- `(unverified)` — assumptions made without a confirming `file:line`
+
+Keep this section even when empty: an explicit "nothing open" is a deliberate signal, not an omission. Any load-bearing unknown here feeds the Open-Questions gate before planning begins.
+
+Report hygiene: receipts over sentences — one tight line per finding, `file:line` is the citation, prose is the glue. Place any unresolved questions and `NEEDS DECISION` items last (in `## Open Questions / Not Found`), never buried mid-report.
