@@ -147,6 +147,12 @@ global-load of the AGENTS.md contract is intentional, leave it.
 Founder chose to ship these **separately** (each its own ledger task). Order = value descending;
 #1 is grounded in this session's measured round-cost.
 
+**Status (2026-06-15):** items 1-6 (the prose-craft slate) are DONE — all six crew contracts
+upgraded, gated (verify + tester PASS + reviewer APPROVE), committed `ef9c0d6`, and **deployed to
+~/.claude**. Lazy-load (6, second half) is deferred into the mechanism waves alongside
+consolidator.md hygiene. Items 7-9 remain (each a full build); founder paused after Wave 1 to take
+them fresh.
+
 1. **Anti-rationalization + DoD self-check + contract-stability → Faber.** [light] — first; targets
    the green-but-wrong round problem measured this session.
 2. **Judge hardening → Thomas + Petros.** [light] — bias armor + cheat-class + checklist/suppressions.
