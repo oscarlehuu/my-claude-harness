@@ -58,6 +58,23 @@ to one developer run (un-resumable monolith). The fix:
   `developer.md` (consume one phase file as GOAL), a `task-plan.sh` (or extend `task-init`) for
   scaffolding. Maps claudekit's `project-management`/sync-back role onto our ledger.
 
+**#9 requires a co-design session FIRST (discuss before building).** The design above locks the
+*shape*; implementation will surface real decisions that need the founder — per the founder's
+"co-design before artifact" rule and the Open-Questions gate this slate just shipped, resolve these
+BEFORE writing code (this is the agenda for the fresh session):
+- **Phase-file format/schema** — exact frontmatter fields and where phase files live
+  (`.claude/maestro/<slug>/phases/`?); is a phase file literally a serialized GOAL handoff?
+- **Dependency graph** — how phases declare deps, how the CTO derives dispatch order / what's parallelizable.
+- **Parallelism** — sequential first vs. parallel independent phases via worktrees (WIP 2-3); and
+  per-phase task-dir artifact scoping (Wave-1 lesson: parallel tasks under one slug raced on
+  `edge-cases.md` — phasing MUST scope artifacts per-phase or the same race returns).
+- **Per-phase gate cadence** — confirm scoped-verify every phase · tester on risky + one final pass ·
+  reviewer once pre-ship; and the two-level DoD (phase-DoD = verify; plan-DoD = all phases + final
+  gates) in `task-status`.
+- **Resume mechanism** — `phase_started`/`phase_done` events + how resume picks the next pending phase.
+- **Upstream wiring** — phasing consumes the Open-Questions gate (#7) + scout-first (#8); confirm the
+  handoff order (scout → questions drain → plan → decompose → per-phase dispatch).
+
 ### 2. Open-Questions gate (invariant)
 
 No load-bearing unknown may flow into planning/implementation. Today this does not exist: open
