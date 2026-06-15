@@ -46,6 +46,6 @@ What was searched for but not located, plus any assumptions the next agent must 
 - `(not found)` — what was looked for and where
 - `(unverified)` — assumptions made without a confirming `file:line`
 
-Keep this section even when empty: an explicit "nothing open" is a deliberate signal, not an omission. Any load-bearing unknown here feeds the Open-Questions gate before planning begins.
+Keep this section even when empty: an explicit "nothing open" is a deliberate signal, not an omission. On a **pre-plan recon** (scout-first, project/large handoffs), this is your most load-bearing output: the CTO turns each unknown here into a `task-record question add "<text>" route=… cost=…` ledger entry, and the Open-Questions gate must drain clean before the planner is dispatched — so a sharp, well-routed unknown (and a clean "nothing open") is what unblocks planning.
 
 Report hygiene: receipts over sentences — one tight line per finding, `file:line` is the citation, prose is the glue. Place any unresolved questions and `NEEDS DECISION` items last (in `## Open Questions / Not Found`), never buried mid-report.

@@ -132,6 +132,35 @@ documentation — teammate words become docs.
   (secret values out-of-band), then AskUserQuestion (header `Gate 1`): **Approve / Revise**. Do not
   proceed until approved; record with `task-record.sh gate1_approved`.
 
+**Scout-first (scale-conditional — project/large handoffs only).** For a **project/large handoff**
+(the full-tier *mode* for whole-project work, roadmap-defined), spawn `scout` (Gabriel, cheap recon)
+**before** the planner so the expensive planner spends tokens reasoning, not searching. The chain is
+explicit and ordered: **scout → open-questions → gate drains → plan.** Gabriel returns its
+`## Open Questions / Not Found` section; the CTO converts each load-bearing unknown into a ledger
+question — `task-record.sh question add "<text>" route=<code|history|founder|team|planner>
+[cost=<low|med|high>]` — then drains the **Open-Questions gate (§2a)**: `task-status.sh` must read
+**clean** (no blocking question) **before the planner is dispatched**. This reuses §2a's predicate
+and teeth — no second gate — and the same precondition §2a already names at the scout→planner
+boundary. Scout output is a fast map + question-surfacer, **not trusted fact**: the planner re-greps
+load-bearing facts itself (scout goes stale). A **contained full-tier** task (single coherent change,
+planner self-grounds fine) **MAY skip scout-first** — the discriminator is **scale**, not risk. Small
+tiers (light/standard) never run it.
+
+**Plan red-team (full/project — before Gate 1).** Once the planner returns and the gate is clean, run
+**one adversarial pass on the PLAN itself** before you relay Gate 1 — Petros in **plan-red-team mode**
+(`crew/reviewer.md`), attacking approach soundness, decomposition gaps, over-broad assumptions, missed
+edge cases, and blast radius the plan ignores. Catching a wrong approach or a bad N-phase breakdown
+here is the cheapest point — before any code is built. This reuses Petros and the **gate-pipeline
+`judge` mechanism** (a crew agent invoked as a judge); record the outcome via a **`note` event**
+(`task-record.sh note text="plan-red-team: <verdict> — <summary>"`) — NOT `reviewer_verdict`, which is
+reserved for the §7 pre-ship code review that `commit-gate` keys on, so a plan-stage verdict never
+muddies the ship gate's state. It runs at the **plan boundary** (after the
+planner, before Gate 1), not as a declared `maestro.json` stage — the stage enum is
+`per-round|pre-ship|release` (`pre-ship` judges the CODE), so plan red-team is a CTO-orchestrated judge
+step at the plan point, not a `stage` value. `REQUEST_CHANGES` sends the plan back to the planner
+before Gate 1. **Trigger: full/project only** — light/standard never plan-red-team (the inline plan is
+the founder's to veto at the digest).
+
 ### 2a. Open-Questions gate (the canonical, code-enforced invariant)
 
 No load-bearing unknown may silently flow into planning or implementation. "Open questions" are a
@@ -172,6 +201,22 @@ mechanism with teeth.
   blocker and the refusal can never disagree.
 
 ## 3. Implement (light/standard/full)
+
+**Security red-team (conditional on SURFACE — not universal).** When the task touches a **security
+surface** — auth, payments, crypto, secrets, PII, or a public API (the same protected-path triggers
+that put a task at `full` in the tier ladder) — run a **proactive attack-surface enumeration** with
+Petros in **security mode** (`crew/reviewer.md`), **ideally early** (before or alongside the first dev
+round, front-loaded against the surface). This is **shift-left for security**: it enumerates bypass
+vectors (case/encoding/path-traversal), trust boundaries, injection/authz holes, and secrets exposure
+up front, instead of the tester finding them reactively round-by-round. (Security bugs found reactively
+cost fix-rounds; front-loading attack-surface enumeration collapses them into one proactive pass.)
+It reuses Petros and the **gate-pipeline `judge` mechanism**; record via a **`note` event**
+(`task-record.sh note text="security-red-team: <verdict> — <summary>"`) — NOT `reviewer_verdict`,
+which is reserved for the §7 pre-ship code review that `commit-gate` keys on. It is **distinct from the
+§7 pre-ship review** (that judges
+the finished diff; this front-loads the threat model). **NOT universal** — a task that touches no
+security surface skips it; the tier ladder plus Petros's standing security dimension cover the common
+case.
 
 Spawn `developer` (backend) or `ui-developer` (frontend) with a **GOAL handoff** — its entire
 world, every dispatch, all five sections:
