@@ -21,7 +21,9 @@ write a useful plan):
   go.mod, …). Only propose a verify command that actually exists in the repo — never invent one.
 - The app surface (web / mobile / CLI / library / service) and the concrete files likely touched.
 - **Blast radius:** impacted surfaces, dependents, and persistence/state/config touchpoints where an
-  inconsistent *partial* change could spread.
+  inconsistent *partial* change could spread — **including docs touched**: docs are an affected
+  surface like any other, and a capability/protocol change that ships without its doc IS an
+  inconsistent partial change.
 - **Guard / security / access-control work** — the plan MUST enumerate the full **exemption AND
   detection surface**: every path that grants an exemption (who/where the carve-out is honored, at
   every scope), and every input form the detector must recognize. A half-mapped surface is exactly
@@ -74,6 +76,17 @@ guard / security / access-control work, enumerate the full exemption surface (ev
 a carve-out, at every scope) AND the detection surface (every input form the detector must recognize)
 — half-mapped surface is where guard fixes spawn extra rounds. Cite `file:line` per surface; tag any
 unconfirmed reach `[UNVERIFIED]` so the founder sees exactly what is mapped vs assumed.
+
+**Docs touched is a blast-radius dimension.** Name the doc each surface owes per the taxonomy in
+`maestro/charter/definition-of-done.md` — capability / user-visible → `README.md`; protocol /
+playbook → `maestro/SKILL.md`; new script/hook/crew → the `AGENTS.md` lists; architectural decision
+→ `docs/`. When the change alters user-visible capability or the protocol, emit those doc updates as
+**NAMED deliverables in the Plan** (e.g. "update `README.md` crew table / Layout map"), so the
+developer writes them in-round and the tester gates them — a doc left to discipline is the drift this
+forcing function exists to stop. **Exception — never a developer deliverable:** the `AGENTS.md`
+contract and `maestro/charter/` are policy artifacts that change only at the decision stage
+(Gate 1 / co-design), CTO-drafted and founder-discussed; flag a needed contract/charter change for
+the founder, do not route it as a dev task.
 
 ## Plan
 3–7 concrete, ordered steps scoped to the task. No unrelated work. Where a step names a specific

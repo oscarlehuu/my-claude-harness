@@ -48,6 +48,50 @@ for s in maestro/scripts/*.sh; do
   fi
 done
 
+# --- README structured blocks must also stay in sync with the code ---
+# The crew table (## The crew) and the Layout map (## Layout) are structured blocks,
+# not narrative — gate them the same way AGENTS.md is gated, so README can't drift
+# again (it did in #9 while AGENTS.md, test-gated, stayed synced). Only these blocks
+# are checked; the surrounding prose is deliberately left ungated. We extract each
+# block so a name buried in unrelated narrative can't vacuously satisfy the check.
+readme_crew_rows="$(awk '/^## The crew$/{f=1;next} /^## /{f=0} f' README.md | grep '^|' || true)"
+readme_layout="$(awk '/^## Layout$/{f=1;next} /^## /{f=0} f' README.md || true)"
+
+# every crew name (frontmatter slug, same anchor as the AGENTS.md table) in the crew table
+for f in maestro/crew/*.md; do
+  name="$(sed -n 's/^name: //p' "$f" | head -1)"
+  if [ -z "$name" ]; then
+    _result fail "crew/?? frontmatter parse" "missing name in $f"
+    continue
+  fi
+  if printf '%s' "$readme_crew_rows" | grep -qF "| $name |"; then
+    _result ok "README crew table lists $name"
+  else
+    _result fail "README crew table lists $name" "crew exists on disk but is missing from README's '## The crew' table"
+  fi
+done
+
+# every hook basename spelled out in the Layout map (compressed/abbreviated forms don't count)
+for h in maestro/hooks/*.sh; do
+  base="$(basename "$h" .sh)"
+  case "$base" in lib-*) continue ;; esac   # shared libs are not hooks
+  if printf '%s' "$readme_layout" | grep -qF "$base"; then
+    _result ok "README Layout lists hook $base"
+  else
+    _result fail "README Layout lists hook $base" "hook exists on disk but is missing from README's '## Layout' map"
+  fi
+done
+
+# every ledger script basename spelled out in the Layout map (the literal task-plan, not task-init/plan)
+for s in maestro/scripts/*.sh; do
+  base="$(basename "$s" .sh)"
+  if printf '%s' "$readme_layout" | grep -qF "$base"; then
+    _result ok "README Layout lists script $base"
+  else
+    _result fail "README Layout lists script $base" "script exists on disk but is missing from README's '## Layout' map (compressed form like task-init/plan hides it)"
+  fi
+done
+
 # --- settings.hooks.json must reference only hooks that exist on disk ---
 while IFS= read -r ref; do
   base="$(basename "$ref")"

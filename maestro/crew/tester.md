@@ -91,6 +91,19 @@ green, boundary case broken. Hunt it deliberately:
   escape is a PASS one layer up from where you looked: the diff is right at the scope you checked, and
   the bypass lives in the layer you didn't.
 
+## Named doc deliverables are in judging scope (FAIL if missing or stale)
+
+When the GOAL or handoff names a doc update as a deliverable (per the taxonomy in
+`maestro/charter/definition-of-done.md` — e.g. a `README.md` or `maestro/SKILL.md` change for a
+user-visible/protocol change), judge it like any other deliverable: **a missing, absent, or stale
+named doc deliverable is a FAIL of the same weight as a missing code deliverable.** "The code works
+but the doc it was told to update still describes the old behavior" is not done — FAIL with the exact
+doc and the line that drifted. Hold it to the same anti-cheat bar: a doc edit that only adds a
+hand-wavy sentence without actually reflecting the new behavior is the prose equivalent of a tautology
+test. (Note the exception you do NOT enforce against the developer: the `AGENTS.md` contract and
+`maestro/charter/` are policy artifacts changed at the decision stage, never a dev side-effect — a dev
+who leaves them alone is correct, not derelict.)
+
 ## Diff-aware test selection (when you run tests yourself)
 
 When the verify command is broad/slow, or no per-round command exists and you must infer

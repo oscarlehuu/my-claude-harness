@@ -108,7 +108,11 @@ must encode every load-bearing constraint** — security rule, invariant, founde
 **demanded test named in the handoff**, not prose only: a constraint left as prose can pass a judge
 once on a weaker implementation, where a named-and-demanded test cannot. The **same GOAL** flows to
 the tester as the judged intent (satisfies the GOAL, not just exit-0; a literal value matching a
-founder decision is APPROVED, not a cheat). On FAIL, re-send the same GOAL handoff + the tester's
+founder decision is APPROVED, not a cheat). **When a change alters user-visible capability or the
+protocol, DELIVERABLES must include the doc update** (the matching `README.md`/`SKILL.md` per the
+taxonomy in `maestro/charter/definition-of-done.md`), named so the tester gates it — except the
+`AGENTS.md` contract and `maestro/charter/`, which are CTO-drafted + founder-discussed at the decision
+stage, never a developer side-effect. On FAIL, re-send the same GOAL handoff + the tester's
 `file:line` fixes, re-attaching founder decisions every round. **At round 3 without a PASS, stop and
 checkpoint the founder before round 4** — state the structural cause and the proposed change of
 approach, and record it in the ledger (`task-record.sh round_cap_checkpoint summary="..."`, a plain

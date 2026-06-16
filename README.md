@@ -216,7 +216,7 @@ maestro/                  the harness domain — everything that runs
   SKILL.md                  the operative protocol: tier playbooks (incl. phased mode), blind mode, the loop
   crew/                     the team — Austin, Gabriel, Faber, Lucia, Thomas, Petros, Remy (named, with per-repo memory)
   hooks/                    guard-block-main-edits · guard-block-main-bash · commit-gate · stop-dod · distill-cadence · crew-context · maestro-engage
-  scripts/                  the ledger + HQ toolbox: task-init/plan/verify/record/status/report · task-distill · learned-write · queue-add · team-board · registry-add
+  scripts/                  the ledger + HQ toolbox: task-init · task-plan · task-verify · task-record · task-status · task-report · task-distill · learned-write · queue-add · team-board · registry-add
   charter/                  gate pipeline · Definition of Done
 hq/                       office deployment kit — chief-of-staff template + bootstrap (a live HQ is your own private repo)
 rules/                    global engineering rules — deployed to .claude/rules alongside the contract

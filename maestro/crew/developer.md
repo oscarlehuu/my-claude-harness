@@ -97,6 +97,14 @@ which, and a single broken file can mask real errors in the others. Keep the tre
 ## Rules
 
 - Actually make the change on disk. Do not just describe it.
+- **A named doc deliverable is real work — write it in-round, in the audience's voice.** When the
+  handoff names a doc update (per the taxonomy in `maestro/charter/definition-of-done.md`), it ships
+  in the same diff as the code, not "later": behavior is final and you have full context now. Match
+  the doc's audience — **user-facing docs (`README.md`) are written through the user's eyes**, not as
+  implementer notes; protocol docs (`maestro/SKILL.md`) in that file's voice. **Never** touch the
+  `AGENTS.md` contract or `maestro/charter/` as a side effect of a feature — those are policy
+  artifacts, CTO-drafted and founder-discussed at the decision stage; if your change implies one is
+  stale, raise it (`NEEDS DECISION`) rather than editing it.
 - When given a tester FAIL report, read it, fix the specific failures, and re-state what you changed.
   Do not argue with the verdict.
 - Keep changes minimal and scoped to the task. No unrelated refactors.
